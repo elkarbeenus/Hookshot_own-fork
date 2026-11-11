@@ -47,7 +47,8 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 
 **Handhelds (AMD integrated GPUs)**
 
-- The first start uses the menu's Handheld settings (`RX_VK_AUTO_HANDHELD=0` keeps the docked defaults).
+- The first start uses the menu's Handheld settings with frame generation off (`RX_VK_AUTO_HANDHELD=0` keeps the docked
+  defaults): a Steam Deck runs the game short of CPU, where made frames only take GPU work out of the same power budget.
   (`gpu/vk/vk_menu.cpp`)
 - Texture limits suited to shared memory: at most 1024 px and 128 MB of texture uploads by default, unless
   `TEX_MAX_DIM` / `TEX_MAX_MB` say otherwise. (`gpu/vk/vk_texture.cpp`)
@@ -60,7 +61,7 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   press. `HOOKSHOT_PLAY_DETACH=1` closes it at once as upstream. (`builder/linux/hookshot_builder.py`)
 - Upstream fixes taken one by one since the last sync: Fritchii's pipeline list (#2133, 1,461 more pipelines prepared
   before play), first-cutscene bosses drawn blue (#2452), and the crash after loading a save when a model heap is full
-  (#2451).
+  (#2451), and the CPU savings #2420 and #2439 with the split-submission fence fix #2419.
 - Started by Steam on Linux, the game loads its own bundled SDL2 before the system's SDL3: with SDL3 the Steam
   Controller's Steam Input pad came with wrong buttons and no left stick. `HOS_SDL_VERSION=3` keeps SDL3 first.
   (`host/hos_sdl.c`)
@@ -69,6 +70,10 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   them to the focused window. (`host/nn_hid.c`)
 - The builder's **Browse** buttons open the desktop's own file chooser (kdialog on SteamOS/KDE, else zenity), which
   follows the dark theme; Tk's chooser is the fallback (`HOOKSHOT_TK_DIALOGS=1` keeps it). (`builder/linux/hookshot_builder.py`)
+
+- On Linux handhelds (8 logical processors or fewer) the game's sleeps under a millisecond wait on the high-resolution
+  timer instead of yield loops that kept a processor busy each; upstream's rule covers only 6 or fewer.
+  `HOS_SHORT_SLEEP_TIMER=0` or `1` decides. (`host/hos_thread.c`)
 
 **Sound**
 

@@ -900,12 +900,21 @@ static void sleep_ns(int64_t ns, int guest) {
         if (GetActiveProcessorGroupCount() == 1 && GetProcessAffinityMask(GetCurrentProcess(), &proc, &sys))
             threads = __builtin_popcountll((uint64_t)proc);
 #endif
-        const int how = hos_short_sleep_timer(getenv("HOS_SHORT_SLEEP_TIMER"), threads);
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+        threads = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+        int how = hos_short_sleep_timer(getenv("HOS_SHORT_SLEEP_TIMER"), threads);
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+        /* (LaküenRecomp) Linux handhelds: a Steam Deck or Legion Go S has 8 logical processors (4 cores) and runs the game short
+           of CPU (20 fps, the GPU waited on 0.4 ms a frame): the game's sleeps under a millisecond wait on the timer there too,
+           not in yield loops that keep a processor busy each. HOS_SHORT_SLEEP_TIMER=0 or 1 decides */
+        if (!how && !getenv("HOS_SHORT_SLEEP_TIMER") && threads > 0 && threads <= 8) how = 1;
+#endif
         /* (the line says what was chosen, before any thread has made its timer: where the high-resolution timer cannot
            be made, Windows before 10 1803, a short sleep falls through to the yield loop at the end and nothing changes) */
         static volatile LONG told;
         if (how && !InterlockedExchange(&told, 1))
-            hos_log("sleep: %s sleeps under a millisecond wait on the timer where Windows has the high-resolution one "
+            hos_log("sleep: %s sleeps under a millisecond wait on the timer where the system has the high-resolution one "
                     "(%d logical processors; HOS_SHORT_SLEEP_TIMER=0: all yield)",
                     how == 2 ? "all" : "the game's", threads);
         short_timer = how;

@@ -3070,8 +3070,12 @@ void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkP
     opts.handheld = 0;
     // (handheld-rdna2) An AMD integrated GPU (Steam Deck, Legion Go S, ROG Ally): the handheld profile. On a Steam Deck it took
     // a settled room from ~15 to ~19.5 fps (Hookshot-SteamDeck, H1). RX_VK_AUTO_HANDHELD=0: docked, as on other GPUs
-    if (integrated && props.vendorID == 0x1002 && !(getenv("RX_VK_AUTO_HANDHELD") && atoi(getenv("RX_VK_AUTO_HANDHELD")) == 0))
+    if (integrated && props.vendorID == 0x1002 && !(getenv("RX_VK_AUTO_HANDHELD") && atoi(getenv("RX_VK_AUTO_HANDHELD")) == 0)) {
         opts.handheld = 1;
+        // (LaküenRecomp) and no frame generation: a Steam Deck ran ~20 fps short of CPU, where made frames only add GPU work out of
+        // the same power budget and their lag
+        opts.framegen = 0;
+    }
     restart_init();   // (what this run starts with)
     save();   // (host/nn_applet.c reads handheld_profile from the file when the game first asks its mode, after this)
     logf("vk: first start on %s (%s, %llu MB of VRAM): the %s preset", props.deviceName, integrated ? "integrated" : "dedicated",
