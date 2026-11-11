@@ -47,7 +47,7 @@ class TargetImagePoolTests(unittest.TestCase):
             self.assertIn(part, rule, part)
         cap = block(self.tex, "uint64_t pool_cap()")
         self.assertIn('getenv("RX_VK_TARGET_POOL_MB")', cap)
-        self.assertIn(": 256", cap)
+        self.assertIn(": 256", cap)   # (and 512 on a card of 8 GB or less: small_vram)
         self.assertIn("uint64_t pool_key = 0;", self.hdr)
 
     def test_a_texture_made_for_a_target_is_one_and_its_image_comes_from_the_targets_blocks(self):
@@ -95,7 +95,7 @@ class TargetImagePoolTests(unittest.TestCase):
 
     def test_the_trim_is_bounded_a_present_and_gives_back_idle_and_excess_images(self):
         trim = block(self.tex, "size_t pool_trim()")
-        self.assertIn("pool_pressed ? 0 : pool_cap()", trim)
+        self.assertIn("pool_pressed ? (small_vram() ? std::min<uint64_t>(pool_cap(), 128ull << 20) : 0) : pool_cap()", trim)
         self.assertIn("pool_pressed ? 64 : 16", trim)
         self.assertIn("frame_no - v[i].since <= 120", trim)
         self.assertIn("pool_bytes <= cap", trim)

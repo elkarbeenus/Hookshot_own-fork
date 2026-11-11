@@ -39,9 +39,11 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 - The fallback's compute pipelines keep the shader optimizer on RADV; only AMD's own drivers build them without it, as in
   upstream's fix for those drivers. (`gpu/vk/vk_draw.cpp`)
 
-- Upstream's VRAM compaction (on by default since #2198) stays off on cards of 8 GB or less, as before: its 85% hold
-  shrank an 8 GB RX 6600 XT's texture budget to ~1.9 GB in the field, and textures were evicted and made again every few
-  frames (7-27 fps). `RX_VK_COMPACT=1` turns it on, `=0` off. (`gpu/vk/vk_texture.cpp`)
+- Low-end defaults on cards of 8 GB or less: the VRAM compaction is held at 90% of the allowance instead of 85% (at 85% an
+  8 GB RX 6600 XT's texture budget fell to ~1.9 GB in the field and textures were remade every few frames), and the render
+  target pool is 512 MB, keeping 128 MB while VRAM is short instead of none (targets were otherwise made ~10 a frame).
+  On the same route: 7-27 fps before, 30-60 fps after. `RX_VK_COMPACT`, `RX_VK_COMPACT_PCT` and `RX_VK_TARGET_POOL_MB`
+  decide. (`gpu/vk/vk_texture.cpp`)
 
 **Handhelds (AMD integrated GPUs)**
 

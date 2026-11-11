@@ -34,7 +34,7 @@ def check_source():
     tex = (ROOT / "gpu/vk/vk_texture.cpp").read_text(encoding="utf-8")
     vma = (ROOT / "gpu/vk/vk_vma.cpp").read_text(encoding="utf-8")
     # (the compaction is on unless RX_VK_COMPACT=0: the rule is vram_compact::enabled, run below)
-    need("vk_texture.cpp: compact_on()", block(tex, "bool compact_on()"), ['vram_compact::enabled(env)'])
+    need("vk_texture.cpp: compact_on()", block(tex, "bool compact_on()"), ['vram_compact::enabled(getenv("RX_VK_COMPACT"))'])
     # (a texture that is not a render target's goes to the textures' pool only when they are compacted, in a branch before the
     # render targets' pool and blocks, which stay as they are)
     make = block(tex, "Texture* create(const Key& key")
@@ -50,7 +50,7 @@ def check_source():
         raise SystemExit("vk_texture.cpp: the dead list is no longer held while a compaction pass is open")
     need("vk_texture.cpp: texture_frame()", frame,
          ["vram_compact::reclaimable(block_free, pool_free)", "vram_compact::pressed(used, allowed)",
-          "vram_compact::held_budget(budget, total_bytes, used, reclaim, allowed, pct)", 'getenv("RX_VK_COMPACT_PCT")',
+          "vram_compact::held_budget(budget, total_bytes, used, reclaim, allowed, pct)", 'compact_pct()',
           # (the hold lets go of the excess alone, not of an eighth of the cache; the driver's limit still asks for 7/8)
           "if (held < budget) budget = evict_to = held;",
           # (the hold's pass: every dead render target, and live textures only for the excess left and only long unused ones;
