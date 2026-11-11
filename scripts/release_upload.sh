@@ -93,7 +93,12 @@ if [[ -z $info ]]; then
     fi
     # (the other workflow can make it between the find and the create: its release is then the one used)
     gh release create "$tag" --verify-tag --title "$tag" --generate-notes "${kind[@]}" >/dev/null || true
-    info=$("$files" find "$tag")
+    # (this fork) the list can lag a release just made by a few seconds (v0.1.0: made, then not found)
+    for wait in 0 3 6 12; do
+        sleep "$wait"
+        info=$("$files" find "$tag")
+        [[ -z $info ]] || break
+    done
     [[ -n $info ]] || { echo "::error::$tag: its release could not be made" >&2; exit 1; }
 fi
 "$files" upload "$tag" "$@"
