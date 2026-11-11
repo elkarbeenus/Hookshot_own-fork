@@ -1,17 +1,96 @@
 <h1 align="center">
   <br>
-  <a>
-  <img src="assets/hookshot.png" alt="Hookshot" width="200">
-</a>
-
-  <br>
-  <b>Hookshot</b>
+  <b>LaküenRecompOoT</b>
   <br>
 </h1>
 
-<h4 align="center">The Legend of Zelda: Ocarina of Time (Nintendo Switch 2) running natively on Windows & Linux, with no emulator.
-</h4>
+<h4 align="center">A personal fork of <a href="https://github.com/NotRexed/Hookshot">NotRexed/Hookshot</a>, tuned for
+Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go S.</h4>
 
+> [!NOTE]
+> This is **not** the official Hookshot project and is not run by its developers. All of the recompilation work is
+> NotRexed's and the Hookshot contributors' (see [Credits](#credits)). Problems you only see in this fork belong in
+> [this fork's issues](https://github.com/elkarbeenus/Hookshot_own-fork/issues), not upstream's.
+
+## About this fork
+
+| | |
+|---|---|
+| Upstream | [NotRexed/Hookshot](https://github.com/NotRexed/Hookshot), `main` |
+| Forked at | [`49f75dc`](https://github.com/NotRexed/Hookshot/commit/49f75dc82fb604643390ac7f95b1f5251b3ba09e) (2026-11-11) |
+| Fork branch | `handheld-rdna2` |
+| License | GPL-3.0-or-later, as upstream ([LICENSE](LICENSE)) |
+| Output | A Linux AppImage (`LakuenRecompOoT-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
+
+Like upstream, this repository contains no game data, keys or executables. The AppImage is the builder: it builds the
+game on your own PC from your own copy.
+
+### What is changed
+
+Each change is a small, separate commit on top of upstream, so it can be read, reverted or sent upstream on its own.
+New behaviour can be switched off with an environment variable (put it in `hookshot_env.txt` in the game folder).
+
+**Graphics (RDNA2 on RADV)**
+
+- Task and mesh draws run on the compute fallback path on RADV RDNA2 GPUs (RX 6000 series, Steam Deck "Van Gogh",
+  Rembrandt and Phoenix/Z1/Z2 APUs). Native mesh shaders on these drivers were the source of hangs and slow frames.
+  `RX_VK_TASK_MESH_FALLBACK=0` goes back to native mesh shaders. (`gpu/vk/vk_main.cpp`)
+- The fallback's compute pipelines keep the shader optimizer on RADV; only AMD's own drivers build them without it, as in
+  upstream's fix for those drivers. (`gpu/vk/vk_draw.cpp`)
+
+**Handhelds (AMD integrated GPUs)**
+
+- The first start uses the menu's Handheld settings (`RX_VK_AUTO_HANDHELD=0` keeps the docked defaults).
+  (`gpu/vk/vk_menu.cpp`)
+- Texture limits suited to shared memory: at most 1024 px and 128 MB of texture uploads by default, unless
+  `TEX_MAX_DIM` / `TEX_MAX_MB` say otherwise. (`gpu/vk/vk_texture.cpp`)
+
+- The Steam Deck's built-in controls, when the game runs without Steam, no longer feed the Deck's gyroscope to the
+  game: holding the Deck while walking made the camera drift up. Under Steam, Steam Input already kept it.
+  `HOS_DECK_MOTION=1` uses it again. (`host/pad_sdl.c`)
+
+**Sound**
+
+- The Linux sound output keeps a 30 ms cushion: playback starts, and restarts after running dry, only once three 10 ms
+  blocks are waiting. Before, every late block was a short gap of silence, heard as a crackle.
+  `HOS_AUDIO_PREBUFFER=<blocks>` (0 to 8, 0 = as upstream). (`host/posix/win32_posix.c`)
+- The mixer's 5 ms period follows the output queue (at most ±2 %), so the system clock and the sound device's clock can no
+  longer drift apart until the queue runs dry or overflows. Linux only; `HOS_AUDIO_DRIFT=0` turns it off.
+  (`host/nn_audio.c`)
+
+**Name**
+
+- Window titles, the in-game menu's banner, the builder's window and menu entry, and the AppImage are named
+  LaküenRecompOoT. Folders, files and the save location stay upstream's (`hookshot`, `~/.local/share/hookshot`), so saves,
+  caches and settings carry over.
+
+**Builder and CI**
+
+- The builder does not offer upstream's newer releases as an update (they would replace this fork's changes);
+  `HOOKSHOT_CHECK_UPSTREAM=1` asks upstream again. (`builder/linux/hookshot_builder.py`)
+- The AppImage job builds in an Ubuntu 24.04 container with GCC 13 from Ubuntu's archive (no Launchpad PPA) and public DNS
+  resolvers. The AppImage therefore needs glibc 2.39 or newer; SteamOS and current distributions have it.
+  (`.github/workflows/linux-appimage.yml`)
+
+### Using it
+
+1. Run the **Linux AppImage** workflow (or open its latest run) and download the `LakuenRecompOoT-linux-x86_64` artifact.
+2. Unzip it, `chmod +x LakuenRecompOoT-*-x86_64.AppImage`, and start it.
+3. Everything after that is as upstream describes below in [On Linux](#on-linux).
+
+The in-game menu opens with <kbd>F1</kbd> or <kbd>Insert</kbd>, or on a controller with Home or Select + Start together
+(see [In-game menu](#in-game-menu)).
+
+---
+
+# Upstream documentation (NotRexed/Hookshot)
+
+Everything below is upstream's README, unchanged, so the links and option tables keep matching the code. Where it says
+"Hookshot", it means the upstream project; release links and the Discord are upstream's.
+
+<p align="center">
+  <img src="assets/hookshot.png" alt="Hookshot" width="160">
+</p>
 
 <p align="center">
   <a href="#project-status">Status</a> |
