@@ -5732,7 +5732,9 @@ bool fallback_compute_pipelines(Program& p) {
         VkComputePipelineCreateInfo ci{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
         ci.stage = si;
         ci.layout = p.layout;
-        if (dev.task_mesh_fallback || getenv("RX_VK_NOOPT"))
+        // (handheld-rdna2) Without the optimizer for AMD's own drivers, which hung on these programs; RADV compiles them as
+        // the compute shaders they are, and unoptimized they cost a Steam Deck's 8 CUs too much
+        if ((dev.task_mesh_fallback && dev.driver_id != VK_DRIVER_ID_MESA_RADV) || getenv("RX_VK_NOOPT"))
             ci.flags |= VK_PIPELINE_CREATE_DISABLE_OPTIMIZATION_BIT;
         if (const VkResult r = cached_compute(&ci, &made[i]); r != VK_SUCCESS) {
             {

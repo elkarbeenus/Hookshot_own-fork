@@ -214,6 +214,25 @@ bool pick_device() {
     return true;
 }
 
+/// (handheld-rdna2) An RDNA2 GPU (gfx10.3): Navi 21-24, VanGogh (Steam Deck LCD and OLED), Rembrandt (680M/660M, the Legion Go S's
+/// Z2 Go), Raphael and Mendocino. By device ID, and by RADV's codename in the device name for IDs not listed.
+static bool amd_rdna2(const VkPhysicalDeviceProperties& p) {
+    const uint32_t id = p.deviceID;
+    if ((id >= 0x73a0 && id <= 0x73ff) || (id >= 0x7420 && id <= 0x743f)) return true;   // (Navi 21, 22, 23; Navi 24)
+    switch (id) {
+    case 0x163f: case 0x1435:            // (VanGogh: Steam Deck LCD, OLED)
+    case 0x1681: case 0x15c8:            // (Rembrandt: Radeon 680M / 660M, Z2 Go)
+    case 0x164e: case 0x1506:            // (Raphael, Mendocino)
+        return true;
+    default:
+        break;
+    }
+    for (const char* name : {"NAVI21", "NAVI22", "NAVI23", "NAVI24", "SIENNA_CICHLID", "NAVY_FLOUNDER", "DIMGREY_CAVEFISH",
+                             "BEIGE_GOBY", "VANGOGH", "REMBRANDT", "RAPHAEL", "MENDOCINO", "GFX1036", "GFX1037"})
+        if (strstr(p.deviceName, name)) return true;
+    return false;
+}
+
 bool create_device() {
     uint32_t n = 0;
     vkEnumerateDeviceExtensionProperties(dev.physical, nullptr, &n, nullptr);
@@ -457,6 +476,15 @@ bool create_device() {
     // (driver 0x800161) the native path lost the device within minutes at Hyrule Castle's entrance, while the fallback played
     // 25 minutes there with none. Navi 21 is 0x73bf (RX 6800, 6800 XT, 6900 XT); Navi 22 is 0x73df (RX 6700 XT)
     task_mesh_fallback = dev.props.vendorID == 0x1002 && (dev.props.deviceID == 0x73bf || dev.props.deviceID == 0x73df);
+#endif
+#ifndef _WIN32
+    // (handheld-rdna2) RADV on RDNA2 (RX 6000, the Steam Deck's VanGogh, the Legion Go S's Z2 Go / Rembrandt): OoT's task + mesh
+    // draws hang the GPU in the Great Deku Tree (issues 708, 614 on an RX 6600; 817 on the Deck), as they did in the Switch
+    // emulators on these GPUs, where the compute path is what plays. Mesh-only programs keep the native path.
+    if (dev.props.vendorID == 0x1002 && dev.driver_id == VK_DRIVER_ID_MESA_RADV && amd_rdna2(dev.props)) {
+        task_mesh_fallback = true;
+        logf("vk: RADV on RDNA2 (%s): task + mesh draws on the compute path (RX_VK_TASK_MESH_FALLBACK=0: native)", dev.props.deviceName);
+    }
 #endif
     if (mesh_mode == 1) task_mesh_fallback = false;   // (Native: the card's own mesh shaders for every draw)
     if (const char* e = getenv("RX_VK_TASK_MESH_FALLBACK")) task_mesh_fallback = atoi(e) != 0;
