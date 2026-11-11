@@ -43,8 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     # (this fork: the container's own resolver failed every lookup on 2026-11-11 ("Could not resolve archive.ubuntu.com"
     # from the first apt-get update, four runs in a row); public resolvers given directly)
+    # (this fork: Ubuntu 24.04, whose own archive has GCC 13: Launchpad, which the toolchain PPA needs, and its keyserver
+    # timed out from the runners on every try today. The AppImage then needs glibc 2.39, which SteamOS has)
     container:
-      image: ubuntu:22.04
+      image: ubuntu:24.04
       options: --dns 1.1.1.1 --dns 8.8.8.8
     # (about 4 minutes with the dependencies cached; building them all, as a release does, takes longer)
     timeout-minutes: 60
@@ -64,21 +66,8 @@ jobs:
           # Retry the entire bootstrap: even the first index refresh or the toolchain setup can fail while a mirror syncs.
           # Every attempt refreshes the signed indexes; no stale-index or authentication checks are bypassed.
           for try in 1 2 3; do
-            # (libstdc++ 13, from the toolchain PPA: C++20 <format>; linked in statically)
-            # (this fork: add-apt-repository asks api.launchpad.net, which timed out every time on 2026-11-11; the PPA is then
-            # added by hand from its archive host with its signing key, checked against the PPA's fingerprint)
+            # (libstdc++ 13, in Ubuntu 24.04's archive: C++20 <format>; linked in statically)
             if apt-get update &&
-              apt-get install -y --no-install-recommends software-properties-common gpg-agent gpg curl ca-certificates &&
-              { timeout 90 add-apt-repository -y ppa:ubuntu-toolchain-r/test || {
-                  mkdir -p /etc/apt/keyrings &&
-                  curl -fsSL --retry 3 --max-time 60 \
-                    "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x60C317803A41BA51845E371A1E9377A2BA9EF27F" |
-                    gpg --dearmor > /etc/apt/keyrings/toolchain-r.gpg &&
-                  gpg --show-keys --with-colons /etc/apt/keyrings/toolchain-r.gpg |
-                    grep -q '^fpr:::::::::60C317803A41BA51845E371A1E9377A2BA9EF27F:' &&
-                  echo "deb [signed-by=/etc/apt/keyrings/toolchain-r.gpg] https://ppa.launchpadcontent.net/ubuntu-toolchain-r/test/ubuntu jammy main" \
-                    > /etc/apt/sources.list.d/toolchain-r.list &&
-                  apt-get update; }; } &&
               apt-get install -y --no-install-recommends g++-13 libstdc++-13-dev &&
               apt-get install -y --no-install-recommends git ca-certificates curl xz-utils zstd file unzip python3 \
               build-essential gcc-12 g++-12 libstdc++-12-dev nasm meson ninja-build cmake pkg-config \
