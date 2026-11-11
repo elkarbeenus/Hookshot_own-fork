@@ -41,7 +41,11 @@ jobs:
       github.ref_name != 'builder-parts' && github.ref_name != 'linux-parts' && github.ref_name != 'nightly'
       && github.ref_name != 'rc'
     runs-on: ubuntu-latest
-    container: ubuntu:22.04
+    # (this fork: the container's own resolver failed every lookup on 2026-11-11 ("Could not resolve archive.ubuntu.com"
+    # from the first apt-get update, four runs in a row); public resolvers given directly)
+    container:
+      image: ubuntu:22.04
+      options: --dns 1.1.1.1 --dns 8.8.8.8
     # (about 4 minutes with the dependencies cached; building them all, as a release does, takes longer)
     timeout-minutes: 60
     # (id-token and attestations: a release's build provenance)
