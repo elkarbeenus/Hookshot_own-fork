@@ -1261,11 +1261,22 @@ typedef struct {
     WAVEHDR *q[64];
     int head, count;
     DWORD pos;
+    int primed, prime;   /* (LaküenRecompOoT) blocks held back before playing, after the start and after each run-dry */
 } WaveOut;
+/* (LaküenRecompOoT) The mixer writes a 10 ms block every 10 ms by its own clock and the device takes them by its clock: with
+   nothing held back, every late block (a busy frame, a shader compile, the two clocks a little apart) was a gap of silence,
+   a crackle. Playback now starts, and starts again after the queue ran dry, only once HOS_AUDIO_PREBUFFER blocks (3, 30 ms)
+   are waiting; 0 plays as before. host/nn_audio.c keeps the queue near that depth. */
+static int wave_prime_blocks(void) {
+    const char *e = getenv("HOS_AUDIO_PREBUFFER");
+    const int n = e && *e ? atoi(e) : 3;
+    return n < 0 ? 0 : n > 8 ? 8 : n;
+}
 static void wave_pull(void *user, uint8_t *out, int len) {
     WaveOut *w = (WaveOut *)user;
     pthread_mutex_lock(&w->mu);
-    while (len > 0 && w->count) {
+    if (!w->primed && w->count >= w->prime) w->primed = 1;
+    while (len > 0 && w->count && w->primed) {
         WAVEHDR *h = w->q[w->head];
         DWORD k = h->dwBufferLength - w->pos;
         if (k > (DWORD)len) k = (DWORD)len;
@@ -1276,6 +1287,7 @@ static void wave_pull(void *user, uint8_t *out, int len) {
             w->head = (w->head + 1) % 64, w->count--, w->pos = 0;
         }
     }
+    if (len > 0 && w->prime) w->primed = 0;   /* (ran dry: wait for the cushion again) */
     pthread_mutex_unlock(&w->mu);
     if (len > 0) memset(out, 0, (size_t)len);   /* (behind: silence) */
 }
@@ -1285,6 +1297,7 @@ MMRESULT waveOutOpen(HWAVEOUT *out, UINT device, const WAVEFORMATEX *f, DWORD_PT
     if (!hos_sdl_audio_open) return MMSYSERR_ERROR;
     WaveOut *w = (WaveOut *)calloc(1, sizeof *w);
     pthread_mutex_init(&w->mu, NULL);
+    w->prime = wave_prime_blocks();
     if (!hos_sdl_audio_open((int)f->nSamplesPerSec, (int)f->nChannels, f->wBitsPerSample == 16, wave_pull, w)) {
         pthread_mutex_destroy(&w->mu);
         free(w);

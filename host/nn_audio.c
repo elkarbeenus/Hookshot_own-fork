@@ -1088,6 +1088,22 @@ static volatile int renderer_running;
 static volatile int64_t elapsed_frames;
 static HANDLE renderer_thread;
 
+/* (LaküenRecompOoT) The blocks written and not yet played. The mixer runs on the system clock and the device on its own;
+   apart by even 0.1 % the queue ran dry or full now and then, each time a click. The mixer's period follows the queue
+   instead: a block (10 ms) under the target 0.5 % faster, one over 0.5 % slower, at most 2 %, which nobody hears and the
+   game only sees as audio frames a hair early or late. Linux only by default (SDL's device); HOS_AUDIO_DRIFT=1 turns it
+   on on Windows too, HOS_AUDIO_DRIFT=0 keeps the fixed 5 ms. */
+static int out_queued_blocks(void) {
+    int n = 0;
+    for (int i = 0; i < NBLOCKS; i++) n += (*(volatile DWORD *)&hdr[i].dwFlags & WHDR_INQUEUE) != 0;   /* (the device's thread clears it) */
+    return n;
+}
+static int64_t audio_period_for_queue(int queued, int target) {
+    int d = queued - target;
+    if (d < -4) d = -4;
+    if (d > 4) d = 4;
+    return 5000000 + (int64_t)d * 25000;
+}
 static DWORD WINAPI renderer_main(void *p) {
     (void)p;
     hos_thread_boost(2);
@@ -1096,7 +1112,16 @@ static DWORD WINAPI renderer_main(void *p) {
     static int16_t pcm[FRAME * OUT_MAX_CH];
     float gain = 1.0f, gain_want = 1.0f;
     int gain_frames = 0;
+    const char *drift_env = getenv("HOS_AUDIO_DRIFT");
+#ifdef _WIN32
+    const int drift = drift_env && drift_env[0] == '1';
+#else
+    const int drift = !(drift_env && drift_env[0] == '0');
+#endif
+    const char *pre_env = getenv("HOS_AUDIO_PREBUFFER");
+    const int target = (pre_env && *pre_env ? atoi(pre_env) : 3) + 1;   /* (the device's cushion and one more) */
     for (;;) {
+        if (drift && wout) period = audio_period_for_queue(out_queued_blocks(), target);
         hos_sleep_ns(next - hos_now_ns());
         next = audio_mix_deadline(hos_now_ns(), next, period);
         if (!renderer_running) continue;
