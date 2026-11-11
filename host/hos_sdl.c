@@ -104,10 +104,20 @@ int hos_sdl_load(void) {
     static volatile LONG state;   /* 0 not tried, 1 loading, 2 done */
     if (InterlockedCompareExchange(&state, 1, 0) == 0) {
         const char *want = getenv("HOS_SDL_VERSION");
-        HMODULE m = want && atoi(want) == 2 ? NULL : load_one("SDL3.dll");
+        int prefer2 = want && atoi(want) == 2;
+#ifndef _WIN32
+        /* (LaküenRecomp) Started by Steam on Linux, the game's own SDL2 (beside it, the one the AppImage brings) comes first:
+           the system's SDL3 read the Steam Controller's Steam Input pad with the wrong buttons and no left stick (A took
+           once, then nothing moved). The bundled SDL2 reads Steam's mapping for its virtual pad as other games do.
+           HOS_SDL_VERSION=3 keeps SDL3 first */
+        if (!want && (getenv("SteamGameId") || getenv("SteamVirtualGamepadInfo"))) prefer2 = 2;
+#endif
+        HMODULE m = prefer2 ? NULL : load_one("SDL3.dll");
         if (m && get_all(m, 1)) version = 3;
         else if ((m = load_one("SDL2.dll")) && get_all(m, 0)) version = 2;
+        else if (prefer2 && (m = load_one("SDL3.dll")) && get_all(m, 1)) version = 3;   /* (no SDL2: SDL3 after all) */
         hos_log(version ? "sdl: SDL%d" : "sdl: no SDL3 or SDL2 found: no window, sound or SDL controllers", version);
+        if (version == 2 && prefer2 == 2) hos_log("sdl: started by Steam: the game's SDL2 first (HOS_SDL_VERSION=3: SDL3)");
         InterlockedExchange(&state, 2);
     }
     while (state != 2) Sleep(0);

@@ -52,6 +52,9 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 - Started from Steam as a non-Steam game, the builder's **Play** keeps the launcher running (hidden) until the game
   ends. When it closed at once, Steam took the game for ended and the controller stopped answering after the first
   press. `HOOKSHOT_PLAY_DETACH=1` closes it at once as upstream. (`builder/linux/hookshot_builder.py`)
+- Started by Steam on Linux, the game loads its own bundled SDL2 before the system's SDL3: with SDL3 the Steam
+  Controller's Steam Input pad came with wrong buttons and no left stick. `HOS_SDL_VERSION=3` keeps SDL3 first.
+  (`host/hos_sdl.c`)
 - Started by Steam (a non-Steam game, Gaming Mode), the controllers count whatever window has the focus: Steam hands the
   focus to its own windows and the game had no controller input after the first press. `HOS_INPUT_BACKGROUND=0` keeps
   them to the focused window. (`host/nn_hid.c`)
