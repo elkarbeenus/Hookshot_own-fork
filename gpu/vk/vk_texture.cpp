@@ -280,14 +280,15 @@ std::mutex pool_mu;
 std::unordered_map<uint64_t, std::vector<Pooled>> target_pool;   // by pool_key_of
 uint64_t pool_bytes, pool_n, st_pool_reused, st_pool_made, st_pool_destroyed;
 bool pool_pressed;   // (VRAM near what the driver allows: texture_frame's budget)
-/// (LaküenRecomp) A card of 8 GB or less (its largest device-local heap): the low-end defaults below
+/// (LaküenRecomp) A dedicated card of 8 GB or less (its largest device-local heap): the low-end defaults below
 bool small_vram() {
     static const bool v = [] {
         uint64_t vram = 0;
         for (uint32_t i = 0; i < dev.memory.memoryHeapCount; i++)
             if (dev.memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
                 vram = std::max<uint64_t>(vram, dev.memory.memoryHeaps[i].size);
-        const bool small = vram != 0 && vram <= (8704ull << 20);
+        // (a dedicated card only: an integrated GPU's memory is the system's RAM, where a bigger pool costs the game's own memory)
+        const bool small = vram != 0 && vram <= (8704ull << 20) && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
         if (small)
             logf("vk: %llu MB of VRAM: the low-end defaults (compaction held at 90%%, a 512 MB render target pool kept at 128 MB "
                  "while VRAM is short; RX_VK_COMPACT, RX_VK_COMPACT_PCT, RX_VK_TARGET_POOL_MB decide)",
