@@ -69,7 +69,7 @@ $("$files" table nightly)"
     # (the AppImage and its .zsync, or the RecompLauncher zip, of an older commit, once this run has uploaded the new ones)
     gh release view nightly --json assets --jq '.assets[].name' | while read -r old; do
         case $old in
-            Hookshot-*-x86_64.AppImage | Hookshot-*-x86_64.AppImage.zsync) want="Hookshot-.*-x86_64\\.AppImage${old##*.AppImage}" ;;
+            Hookshot-*-x86_64.AppImage | Hookshot-*-x86_64.AppImage.zsync | LakuenRecomp-*-x86_64.AppImage | LakuenRecomp-*-x86_64.AppImage.zsync) want="${old%%-*}-.*-x86_64\\.AppImage${old##*.AppImage}" ;;
             Hookshot-*-Windows-x64.zip) want='Hookshot-.*-Windows-x64\.zip' ;;
             *) continue ;;
         esac
