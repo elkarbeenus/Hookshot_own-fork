@@ -18,7 +18,7 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 |---|---|
 | Upstream | [NotRexed/Hookshot](https://github.com/NotRexed/Hookshot), `main` |
 | Forked at | [`49f75dc`](https://github.com/NotRexed/Hookshot/commit/49f75dc82fb604643390ac7f95b1f5251b3ba09e) (2026-11-11) |
-| Last synced with upstream | [`497060f`](https://github.com/NotRexed/Hookshot/commit/497060f928416bcefa2b395f35199b296b58fba7) (2026-11-11, merged into the fork branch) |
+| Last synced with upstream | [`bce1476`](https://github.com/NotRexed/Hookshot/commit/bce1476c75838b1e2ab20691c3789f26b15a97c1) (2026-11-11, merged into the fork branch) |
 | Fork branch | `handheld-rdna2` |
 | License | GPL-3.0-or-later, as upstream ([LICENSE](LICENSE)) |
 | Output | A Linux AppImage (`LakuenRecomp-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
