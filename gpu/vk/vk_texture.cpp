@@ -281,7 +281,21 @@ std::unordered_map<uint64_t, std::vector<Pooled>> target_pool;   // by pool_key_
 uint64_t pool_bytes, pool_n, st_pool_reused, st_pool_made, st_pool_destroyed;
 bool pool_pressed;   // (VRAM near what the driver allows: texture_frame's budget)
 bool compact_on() {   // (hookshot: the textures in a pool of their own, compacted: compact_step. On unless RX_VK_COMPACT=0)
-    static const bool v = vram_compact::enabled(getenv("RX_VK_COMPACT"));
+    // (LaküenRecomp) Off by default on cards of 8 GB or less, as it was before upstream turned it on: its hold keeps VRAM at 85%
+    // of the allowance, and an 8 GB RX 6600 XT in the field (textures ~2.6 GB, the rest ~3.5 GB) sat over that line, so the
+    // texture budget fell to ~1.9 GB and ~100-200 textures were evicted and made again every few frames: 7-27 fps, frames
+    // up to 1.6 s (upstream's own 6 GB result: 4-5x the frames over 33 ms with it on). RX_VK_COMPACT=1 or 0 decides
+    static const bool v = [] {
+        if (const char* env = getenv("RX_VK_COMPACT")) return vram_compact::enabled(env);
+        uint64_t vram = 0;
+        for (uint32_t i = 0; i < dev.memory.memoryHeapCount; i++)
+            if (dev.memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                vram = std::max<uint64_t>(vram, dev.memory.memoryHeaps[i].size);
+        const bool on = vram == 0 || vram > (8704ull << 20);
+        logf("vk: VRAM compaction %s (%llu MB of VRAM; RX_VK_COMPACT=1 or 0 decides)", on ? "on" : "off, as on cards of 8 GB or less",
+             (unsigned long long)(vram >> 20));
+        return on;
+    }();
     return v;
 }
 uint64_t pool_cap() {
