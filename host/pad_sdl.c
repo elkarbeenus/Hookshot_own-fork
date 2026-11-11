@@ -330,7 +330,7 @@ static void pads_poll(void) {
                 pads[slot].rumble_ns = 0;
                 hd_open(slot, gc);
                 pads[slot].motion = hos_sdl_pad_has_sensor(gc, HOS_SDL_SENSOR_GYRO) && hos_sdl_pad_has_sensor(gc, HOS_SDL_SENSOR_ACCEL);
-                {   /* (LaküenRecompOoT) The Steam Deck's own controls, read without Steam (SDL's HIDAPI driver), bring the Deck's
+                {   /* (LaküenRecomp) The Steam Deck's own controls, read without Steam (SDL's HIDAPI driver), bring the Deck's
                        gyroscope: a handheld held in two hands moves all the time, and the camera kept drifting up while
                        walking. Under Steam, Steam Input keeps the gyroscope to itself. Its motion is left off unless
                        HOS_DECK_MOTION=1; other controllers' motion is unchanged */

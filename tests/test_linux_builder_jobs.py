@@ -56,7 +56,7 @@ class BuildHarness:
 
         namespace = {
             "os": SimpleNamespace(path=os.path, environ=self.environ), "ROOT": str(ROOT),
-            "sys": sys, "make_game": make_game, "APP_NAME": "LaküenRecompOoT",
+            "sys": sys, "make_game": make_game, "APP_NAME": "LaküenRecomp",
             # (toolchain.default_jobs is only asked for RX_JOBS now: it answers RX_JOBS as the real one does)
             "toolchain": SimpleNamespace(default_jobs=lambda: max(1, int(self.environ["RX_JOBS"]))),
             "messagebox": SimpleNamespace(showerror=lambda title, text: self.events.append(("error", title, text)),
@@ -153,7 +153,7 @@ class BuilderBuildJobsTests(unittest.TestCase):
         self.assertFalse(hasattr(harness.gui, "proc"))
         self.assertEqual(len(harness.events), 1)
         kind, title, message = harness.events[0]
-        self.assertEqual((kind, title), ("error", "LaküenRecompOoT"))
+        self.assertEqual((kind, title), ("error", "LaküenRecomp"))
         self.assertIn("HOOKSHOT_JOBS", message)
         self.assertIn("0 for automatic", message)
         self.assertEqual(harness.environ, {"HOOKSHOT_JOBS": raw, "RX_JOBS": "2"})

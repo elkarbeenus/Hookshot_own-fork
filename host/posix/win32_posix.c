@@ -1261,9 +1261,9 @@ typedef struct {
     WAVEHDR *q[64];
     int head, count;
     DWORD pos;
-    int primed, prime;   /* (LaküenRecompOoT) blocks held back before playing, after the start and after each run-dry */
+    int primed, prime;   /* (LaküenRecomp) blocks held back before playing, after the start and after each run-dry */
 } WaveOut;
-/* (LaküenRecompOoT) The mixer writes a 10 ms block every 10 ms by its own clock and the device takes them by its clock: with
+/* (LaküenRecomp) The mixer writes a 10 ms block every 10 ms by its own clock and the device takes them by its clock: with
    nothing held back, every late block (a busy frame, a shader compile, the two clocks a little apart) was a gap of silence,
    a crackle. Playback now starts, and starts again after the queue ran dry, only once HOS_AUDIO_PREBUFFER blocks (3, 30 ms)
    are waiting; 0 plays as before. host/nn_audio.c keeps the queue near that depth. */

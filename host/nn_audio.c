@@ -1088,7 +1088,7 @@ static volatile int renderer_running;
 static volatile int64_t elapsed_frames;
 static HANDLE renderer_thread;
 
-/* (LaküenRecompOoT) The blocks written and not yet played. The mixer runs on the system clock and the device on its own;
+/* (LaküenRecomp) The blocks written and not yet played. The mixer runs on the system clock and the device on its own;
    apart by even 0.1 % the queue ran dry or full now and then, each time a click. The mixer's period follows the queue
    instead: a block (10 ms) under the target 0.5 % faster, one over 0.5 % slower, at most 2 %, which nobody hears and the
    game only sees as audio frames a hair early or late. Linux only by default (SDL's device); HOS_AUDIO_DRIFT=1 turns it

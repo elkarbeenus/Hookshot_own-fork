@@ -1905,7 +1905,7 @@ void draw_options(ui::Ctx& c) {
     }
     {   // (which build, at the banner's left, so a report can say it without opening the log; the release alone when the whole
         // line would run into the tabs)
-        std::string ver = std::string("Lak\xC3\xBC" "enRecompOoT ") + HOOKSHOT_VERSION;   // (the fork's name)
+        std::string ver = std::string("Lak\xC3\xBC" "enRecomp ") + HOOKSHOT_VERSION;   // (the fork's name)
         const float room = (c.w - total) * 0.5f - 60 * s - c.safe, px = 15 * s;
         const auto width = [&](float p) { return ui::size_of(c.f.body, p, ver.c_str()).x; };
         if (width(px) > room && ver.find(" (") != std::string::npos) ver.resize(ver.find(" ("));

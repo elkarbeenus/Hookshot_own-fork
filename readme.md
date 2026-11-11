@@ -1,6 +1,6 @@
 <h1 align="center">
   <br>
-  <b>LaküenRecompOoT</b>
+  <b>LaküenRecomp</b>
   <br>
 </h1>
 
@@ -20,7 +20,7 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 | Forked at | [`49f75dc`](https://github.com/NotRexed/Hookshot/commit/49f75dc82fb604643390ac7f95b1f5251b3ba09e) (2026-11-11) |
 | Fork branch | `handheld-rdna2` |
 | License | GPL-3.0-or-later, as upstream ([LICENSE](LICENSE)) |
-| Output | A Linux AppImage (`LakuenRecompOoT-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
+| Output | A Linux AppImage (`LakuenRecomp-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
 
 Like upstream, this repository contains no game data, keys or executables. The AppImage is the builder: it builds the
 game on your own PC from your own copy.
@@ -61,7 +61,7 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 **Name**
 
 - Window titles, the in-game menu's banner, the builder's window and menu entry, and the AppImage are named
-  LaküenRecompOoT. Folders, files and the save location stay upstream's (`hookshot`, `~/.local/share/hookshot`), so saves,
+  LaküenRecomp. Folders, files and the save location stay upstream's (`hookshot`, `~/.local/share/hookshot`), so saves,
   caches and settings carry over.
 
 **Builder and CI**
@@ -74,8 +74,8 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 
 ### Using it
 
-1. Run the **Linux AppImage** workflow (or open its latest run) and download the `LakuenRecompOoT-linux-x86_64` artifact.
-2. Unzip it, `chmod +x LakuenRecompOoT-*-x86_64.AppImage`, and start it.
+1. Run the **Linux AppImage** workflow (or open its latest run) and download the `LakuenRecomp-linux-x86_64` artifact.
+2. Unzip it, `chmod +x LakuenRecomp-*-x86_64.AppImage`, and start it.
 3. Everything after that is as upstream describes below in [On Linux](#on-linux).
 
 The in-game menu opens with <kbd>F1</kbd> or <kbd>Insert</kbd>, or on a controller with Home or Select + Start together

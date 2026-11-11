@@ -138,7 +138,7 @@ def desktop_exec(path):
     return '"%s"' % escaped.replace("%", "%%")
 
 
-APP_NAME = "LaküenRecompOoT"   # (this fork's name in the windows, dialogs and menu entry; folders and files keep hookshot)
+APP_NAME = "LaküenRecomp"   # (this fork's name in the windows, dialogs and menu entry; folders and files keep hookshot)
 APP_ID = "io.github.NotRexed.Hookshot"   # (the game's window names itself so: host/posix/display_sdl.c's HOS_APP_ID)
 
 
