@@ -814,7 +814,19 @@ static void read_input(uint64_t *buttons, int32_t stick[4]) {
     if (!game_in_front() && !scripted_background) {   /* (the pads alone, when the player asked for them behind other windows) */
         static const char *env;
         static int looked;
-        if (!looked) looked = 1, env = getenv("HOS_INPUT_BACKGROUND");
+        if (!looked) {
+            looked = 1, env = getenv("HOS_INPUT_BACKGROUND");
+#ifndef _WIN32
+            /* (LaküenRecomp) Started by Steam (a non-Steam game's shortcut, Gaming Mode's gamescope): the window's focus is
+               Steam's to give, and it went to Steam's own windows after the first press: the controller did nothing more.
+               Steam Input sends a controller to the game in front anyway, so there the pads always count;
+               HOS_INPUT_BACKGROUND=0 keeps them to the focused window */
+            if (!env && (getenv("SteamGameId") || getenv("SteamAppId") || getenv("GAMESCOPE_WAYLAND_DISPLAY"))) {
+                env = "1";
+                hos_log("hid: started by Steam: controllers count whatever window has the focus (HOS_INPUT_BACKGROUND=0: not)");
+            }
+#endif
+        }
         if (pads_in_background(env, rx_option(4, 0))) pads_read(buttons, stick);
         return;
     }

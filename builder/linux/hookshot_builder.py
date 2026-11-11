@@ -127,6 +127,34 @@ def play(folder):
         return subprocess.Popen([exe], **options)
 
 
+def native_pick(directory, title, start, pattern=None, label=None):
+    """(LaküenRecomp) The desktop's own file chooser (kdialog on SteamOS and KDE, else zenity), which follows its dark theme;
+    Tk's own drew dark text on a dark page there. A path, "" when the player cancelled, None when neither is there (then
+    Tk's dialog). HOOKSHOT_TK_DIALOGS=1 keeps Tk's."""
+    if os.environ.get("HOOKSHOT_TK_DIALOGS", "0") != "0":
+        return None
+    start = start if start and os.path.exists(start) else os.path.expanduser("~")
+    env = make_game.game_env()   # (without the AppImage's libraries first: the desktop's Qt or GTK must load its own)
+    tries = []
+    if shutil.which("kdialog"):
+        tries.append(["kdialog", "--title", title] + (["--getexistingdirectory", start] if directory else
+                     ["--getopenfilename", start] + (["%s|%s" % (pattern, label or pattern)] if pattern else [])))
+    if shutil.which("zenity"):
+        tries.append(["zenity", "--file-selection", "--title=" + title, "--filename=" + start.rstrip("/") + "/"] +
+                     (["--directory"] if directory else []) +
+                     (["--file-filter=%s | %s" % (label or pattern, pattern)] if pattern and not directory else []))
+    for cmd in tries:
+        try:
+            r = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        except OSError:
+            continue
+        if r.returncode == 0:
+            return r.stdout.strip()
+        if r.returncode == 1:   # (cancelled)
+            return ""
+    return None
+
+
 def steam_started(environ=None):
     """(LaküenRecomp) whether Steam started this (a game's or a non-Steam shortcut's launch sets these)"""
     environ = os.environ if environ is None else environ
@@ -770,7 +798,9 @@ class Builder(tk.Tk):
         ttk.Button(f, text=button, command=browse, cursor="hand2").grid(row=row, column=2, padx=(self.px(10), 0), pady=self.px(3))
 
     def pick_file(self, var):
-        p = filedialog.askopenfilename(title="Your game's .nup", filetypes=[("Switch 2 game package", "*.nup"), ("All files", "*")])
+        p = native_pick(False, "Your game's .nup", os.path.dirname(var.get() or ""), "*.nup", "Switch 2 game package")
+        if p is None:
+            p = filedialog.askopenfilename(title="Your game's .nup", filetypes=[("Switch 2 game package", "*.nup"), ("All files", "*")])
         if p:
             var.set(p)
             self.source_picked = True
@@ -778,7 +808,9 @@ class Builder(tk.Tk):
             self.check_version()
 
     def pick_dir(self, var):
-        p = filedialog.askdirectory(title="Choose a folder", initialdir=var.get() or os.path.expanduser("~"))
+        p = native_pick(True, "Choose a folder", var.get())
+        if p is None:
+            p = filedialog.askdirectory(title="Choose a folder", initialdir=var.get() or os.path.expanduser("~"))
         if p:
             var.set(p)
             if var is self.exefs:
