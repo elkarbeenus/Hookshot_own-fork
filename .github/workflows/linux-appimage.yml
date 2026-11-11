@@ -5,8 +5,6 @@
 # pushed by hand, or the tag the Release workflow passes when it calls this one (inputs.tag). On any other push to main,
 # the same files replace those of the nightly prerelease, the latest development build.
 name: Linux AppImage
-# (this fork) the run's title in the Actions list: what the build contains, in English (the note a manual run is given)
-run-name: "${{ inputs.note || (startsWith(github.ref, 'refs/tags/') && format('Release {0}', github.ref_name)) || 'Linux AppImage' }}"
 on:
   push:
     branches: [main]
@@ -19,11 +17,6 @@ on:
       - '*.md'
       - '.release-please-manifest.json'
   workflow_dispatch:
-    inputs:
-      note:
-        description: What this build contains, in English (shown as the run's title)
-        type: string
-        default: ""
   workflow_call:
     inputs:
       tag:
