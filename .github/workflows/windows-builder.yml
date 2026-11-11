@@ -10,9 +10,10 @@
 name: Windows builder
 
 on:
+  # (this fork) Linux only: a version tag builds the Linux AppImage alone (one build per release); the Windows builder runs
+  # only when started by hand
   push:
     branches: [main]
-    tags: ['*']
   # (not for a pull request that changes only documentation or the release manifest: nothing of them is compiled or
   # packaged but readme.md, which is only copied in. A push to main builds every time)
   pull_request:

@@ -58,6 +58,9 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 - Started from Steam as a non-Steam game, the builder's **Play** keeps the launcher running (hidden) until the game
   ends. When it closed at once, Steam took the game for ended and the controller stopped answering after the first
   press. `HOOKSHOT_PLAY_DETACH=1` closes it at once as upstream. (`builder/linux/hookshot_builder.py`)
+- Upstream fixes taken one by one since the last sync: Fritchii's pipeline list (#2133, 1,461 more pipelines prepared
+  before play), first-cutscene bosses drawn blue (#2452), and the crash after loading a save when a model heap is full
+  (#2451).
 - Started by Steam on Linux, the game loads its own bundled SDL2 before the system's SDL3: with SDL3 the Steam
   Controller's Steam Input pad came with wrong buttons and no left stick. `HOS_SDL_VERSION=3` keeps SDL3 first.
   (`host/hos_sdl.c`)
@@ -93,10 +96,18 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   resolvers. The AppImage therefore needs glibc 2.39 or newer; SteamOS and current distributions have it.
   (`.github/workflows/linux-appimage.yml`)
 
+### Versions
+
+Until everything runs as it should on the PC, the Steam Deck and the Legion Go S, versions count up below 1.0:
+`v0.<minor>.<patch>`. The minor number goes up for a build with new features or changed defaults, the patch number for a
+build that only fixes something. `v1.0.0` is the first release meant for everyone. Each version is a tag on the fork
+branch; pushing it builds the AppImage once and publishes it as a release here, which the builder's **Update** button
+finds. The in-game menu's banner shows the version.
+
 ### Using it
 
-1. Run the **Linux AppImage** workflow (or open its latest run) and download the `LakuenRecomp-linux-x86_64` artifact.
-2. Unzip it, `chmod +x LakuenRecomp-*-x86_64.AppImage`, and start it.
+1. Download `LakuenRecomp-v0.x.y-x86_64.AppImage` from this fork's latest [release](https://github.com/elkarbeenus/Hookshot_own-fork/releases/latest) (or the `LakuenRecomp-linux-x86_64` artifact of a workflow run).
+2. `chmod +x LakuenRecomp-*-x86_64.AppImage` (unzip it first if it came as an artifact), and start it.
 3. Everything after that is as upstream describes below in [On Linux](#on-linux).
 
 The in-game menu opens with <kbd>F1</kbd> or <kbd>Insert</kbd>, or on a controller with Home or Select + Start together
