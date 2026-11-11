@@ -82,6 +82,37 @@ def no_throttle(handle=None):
         pass
 
 
+def gentle_priority(environ=None):
+    """(LaküenRecomp) Linux: the build and every compiler it starts run at a lower CPU priority (nice 10) and the lowest
+    best-effort I/O priority. Alone on the PC they still get all of it; whatever the player does meanwhile (Steam, Gaming
+    Mode's menus, a browser) comes first, so the PC stays usable. HOOKSHOT_NICE=0 keeps the normal priority, HOOKSHOT_NICE=<n>
+    another nice value. Returns the nice value applied, or 0"""
+    environ = os.environ if environ is None else environ
+    if os.name == "nt":
+        return 0
+    try:
+        level = int(environ.get("HOOKSHOT_NICE", "10"))
+    except ValueError:
+        level = 10
+    level = max(0, min(19, level))
+    if level == 0:
+        return 0
+    try:
+        os.nice(level)
+    except OSError:
+        return 0
+    try:   # (ioprio_set(IOPRIO_WHO_PROCESS, this process, best effort class at its lowest level 7); children inherit it)
+        import ctypes
+        import platform
+        number = {"x86_64": 251, "aarch64": 31}.get(platform.machine())
+        if number:
+            ctypes.CDLL(None, use_errno=True).syscall(number, 1, 0, (2 << 13) | 7)
+    except (OSError, AttributeError):
+        pass
+    print("build: lower CPU and disk priority (nice %d), so the PC stays usable; HOOKSHOT_NICE=0 to change" % level, flush=True)
+    return level
+
+
 PREPARE = False   # (--prepare) say() prints RecompLauncher's "progress <0..1> <text>" lines instead of the builder app's @@ lines
 STAGE_SPAN = {"read": (0.0, 0.05), "lift": (0.05, 0.25), "compile": (0.25, 0.95), "finish": (0.95, 1.0)}   # (a share of the whole each stage takes)
 _stage = {"span": (0.0, 1.0), "text": ""}
@@ -1578,6 +1609,8 @@ def main(a=None):
     a.jobs = chosen_jobs(a.jobs)
     os.makedirs(a.work, exist_ok=True)
     no_throttle()
+    if not a.check:
+        gentle_priority()
     if os.name == "nt":   # (the PC kept awake while this runs: a build is 45 minutes, and sleep stopped it)
         import ctypes
         ctypes.WinDLL("kernel32").SetThreadExecutionState(0x80000000 | 0x00000001)

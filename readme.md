@@ -75,6 +75,9 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 
 **Builder and CI**
 
+- On Linux the build and its compilers run at a lower CPU priority (nice 10) and the lowest best-effort disk priority:
+  alone they still get the whole PC, and whatever the player does meanwhile comes first. `HOOKSHOT_NICE=0` keeps the
+  normal priority. (`nx2/make_game.py`)
 - The builder does not offer upstream's newer releases as an update (they would replace this fork's changes);
   `HOOKSHOT_CHECK_UPSTREAM=1` asks upstream again. (`builder/linux/hookshot_builder.py`)
 - The AppImage job builds in an Ubuntu 24.04 container with GCC 13 from Ubuntu's archive (no Launchpad PPA) and public DNS
