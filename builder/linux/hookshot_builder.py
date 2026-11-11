@@ -686,7 +686,7 @@ class Builder(tk.Tk):
         f.columnconfigure(1, minsize=px(20))
         f.columnconfigure(2, minsize=px(200))
         ttk.Label(f, text="Build your game", style="Title.TLabel").grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(f, text="Pick your game files and where the game goes. Hookshot does the rest, once.", style="Sub.TLabel",
+        ttk.Label(f, text="Pick your game files and where the game goes. %s does the rest, once." % APP_NAME, style="Sub.TLabel",
                   wraplength=px(800)).grid(row=1, column=0, columnspan=3, sticky="w", pady=(px(6), 0))
         if game_ready(self.cfg.get("out")):
             ttk.Button(f, text="Play the game built in %s" % self.cfg["out"], command=lambda: self.play_and_close(self.cfg["out"])).grid(
@@ -862,14 +862,14 @@ class Builder(tk.Tk):
             self.status.set("Update builds your game again %s NVIDIA DLSS."
                             % ("with" if self.dlss.get() else "without"))
         elif self.mode == "update-game":
-            self.status.set("Hookshot %s is available. Your game is %s. Update downloads only what changed, then compiles what changed."
+            self.status.set(APP_NAME + " %s is available. Your game is %s. Update downloads only what changed, then compiles what changed."
                             % (target, game))
         elif self.mode == "up-to-date" and self.latest is None:
             self.status.set("Your game is %s, as this builder. GitHub did not answer, so newer versions could not be checked." % game)
         elif self.mode == "up-to-date":
             self.status.set("%s is the latest version." % game)
         elif self.mode == "update-builder":
-            self.status.set("Hookshot Builder %s is available (this one is %s). Update it first, then build." % (target, self.tools or "this one"))
+            self.status.set(APP_NAME + " Builder %s is available (this one is %s). Update it first, then build." % (target, self.tools or "this one"))
         else:
             self.status.set("")
 
@@ -883,7 +883,7 @@ class Builder(tk.Tk):
             self.launch_status.set("Update available: %s" % target)
             show = True
         elif target and game and game != target:
-            self.launch_status.set("%s is out. Build this folder again with Hookshot Builder to get it." % target)
+            self.launch_status.set("%s is out. Build this folder again with %s Builder to get it." % (target, APP_NAME))
         elif game and self.latest is None:
             self.launch_status.set("Up to date with this builder (GitHub did not answer)")
         elif game:
@@ -945,7 +945,7 @@ class Builder(tk.Tk):
     def begin_update(self, folder=None):
         if folder is not None:
             self.update_folder = folder
-        self.show_progress("Updating your game" if self.update_folder else "Updating Hookshot Builder")
+        self.show_progress("Updating your game" if self.update_folder else "Updating %s Builder" % APP_NAME)
         folder = self.update_folder
         # (a game older than this builder is built again with it: nothing to download, and GitHub need not answer. So is one
         # from a builder that is not an older release, e.g. from the Actions tab: issue 902)
