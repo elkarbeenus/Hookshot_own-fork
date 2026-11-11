@@ -122,9 +122,15 @@ def play(folder):
     try:
         with open(os.path.join(HERE, "play-diagnostics.sh"), encoding="utf-8") as script:
             command = ["/bin/sh", "-c", script.read(), "hookshot-play", exe]
-        subprocess.Popen(command, **options)
+        return subprocess.Popen(command, **options)
     except OSError:
-        subprocess.Popen([exe], **options)
+        return subprocess.Popen([exe], **options)
+
+
+def steam_started(environ=None):
+    """(LaküenRecomp) whether Steam started this (a game's or a non-Steam shortcut's launch sets these)"""
+    environ = os.environ if environ is None else environ
+    return any(environ.get(k) for k in ("SteamGameId", "SteamAppId", "STEAM_COMPAT_APP_ID", "SteamOverlayGameId"))
 
 
 def desktop_exec(path):
@@ -1249,7 +1255,14 @@ class Builder(tk.Tk):
             self.error = "Build cancelled. You can start again from the same folder."
 
     def play_and_close(self, folder):
-        play(folder)
+        game = play(folder)
+        # (LaküenRecomp) Started from Steam (a non-Steam game's shortcut), the launcher stays, hidden, until the game ends: when it
+        # closed at once, Steam took the game for ended and dropped its controller layout, and after the first press the game
+        # had no input. HOOKSHOT_PLAY_DETACH=1 closes it at once as before
+        if game and steam_started() and os.environ.get("HOOKSHOT_PLAY_DETACH", "0") == "0":
+            self.withdraw()
+            self.update_idletasks()
+            game.wait()
         self.destroy()
 
     def close(self):
@@ -1264,7 +1277,9 @@ def main():
     if "--play" in sys.argv[1:]:
         folder = _arg("--play") or load_config().get("out")
         if game_ready(folder):
-            play(folder)
+            game = play(folder)
+            if game and steam_started() and os.environ.get("HOOKSHOT_PLAY_DETACH", "0") == "0":
+                game.wait()   # (LaküenRecomp: under Steam, as play_and_close)
             return
     launch = _arg("--launch")
     update = _arg("--update")

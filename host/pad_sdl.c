@@ -330,14 +330,14 @@ static void pads_poll(void) {
                 pads[slot].rumble_ns = 0;
                 hd_open(slot, gc);
                 pads[slot].motion = hos_sdl_pad_has_sensor(gc, HOS_SDL_SENSOR_GYRO) && hos_sdl_pad_has_sensor(gc, HOS_SDL_SENSOR_ACCEL);
-                {   /* (LaküenRecomp) The Steam Deck's own controls, read without Steam (SDL's HIDAPI driver), bring the Deck's
-                       gyroscope: a handheld held in two hands moves all the time, and the camera kept drifting up while
-                       walking. Under Steam, Steam Input keeps the gyroscope to itself. Its motion is left off unless
-                       HOS_DECK_MOTION=1; other controllers' motion is unchanged */
+                {   /* (LaküenRecomp) Valve's controllers (the Steam Deck's own controls, the Steam Controller), read without
+                       Steam (SDL's HIDAPI driver), bring their gyroscope: held in two hands they move all the time, and the
+                       camera kept drifting up while walking. Under Steam, Steam Input keeps the gyroscope to itself. Their
+                       motion is left off unless HOS_DECK_MOTION=1; other controllers' motion is unchanged */
                     const char *pad_name = hos_sdl_pad_name(gc), *deck_env = getenv("HOS_DECK_MOTION");
-                    if (pads[slot].motion && pad_name && strstr(pad_name, "Steam Deck") && !(deck_env && deck_env[0] == '1')) {
+                    if (pads[slot].motion && pad_name && strstr(pad_name, "Steam") && !(deck_env && deck_env[0] == '1')) {
                         pads[slot].motion = 0;
-                        hos_log("hid: \"%s\": the Steam Deck's gyroscope is not used (HOS_DECK_MOTION=1 uses it)", pad_name);
+                        hos_log("hid: \"%s\": its gyroscope is not used (a Valve controller; HOS_DECK_MOTION=1 uses it)", pad_name);
                     }
                 }
                 pads[slot].motion_on = 0;

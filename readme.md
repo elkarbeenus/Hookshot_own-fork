@@ -45,9 +45,12 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 - Texture limits suited to shared memory: at most 1024 px and 128 MB of texture uploads by default, unless
   `TEX_MAX_DIM` / `TEX_MAX_MB` say otherwise. (`gpu/vk/vk_texture.cpp`)
 
-- The Steam Deck's built-in controls, when the game runs without Steam, no longer feed the Deck's gyroscope to the
-  game: holding the Deck while walking made the camera drift up. Under Steam, Steam Input already kept it.
-  `HOS_DECK_MOTION=1` uses it again. (`host/pad_sdl.c`)
+- Valve's controllers (the Steam Deck's built-in controls, the Steam Controller), when the game runs without Steam, no
+  longer feed their gyroscope to the game: holding the controller while walking made the camera drift up. Under Steam,
+  Steam Input already kept it. `HOS_DECK_MOTION=1` uses it again. (`host/pad_sdl.c`)
+- Started from Steam as a non-Steam game, the builder's **Play** keeps the launcher running (hidden) until the game
+  ends. When it closed at once, Steam took the game for ended and the controller stopped answering after the first
+  press. `HOOKSHOT_PLAY_DETACH=1` closes it at once as upstream. (`builder/linux/hookshot_builder.py`)
 
 **Sound**
 
