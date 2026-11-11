@@ -302,7 +302,9 @@ bool compact_on() {   // (hookshot: the textures in a pool of their own, compact
     // sat over the line in the field and the texture budget fell to ~1.9 GB, ~100-200 textures remade every few frames (7-27 fps);
     // off, the blocks kept 0.9-1.4 GB free that the driver counted, VRAM went past its limit and was paged out (26-40 fps); on at
     // 90% with a 512 MB target pool: 30-60 fps on the same route
-    static const bool v = vram_compact::enabled(getenv("RX_VK_COMPACT"));
+    // An integrated GPU (Steam Deck, Legion Go S) keeps it off, as the handheld builds have had it: RX_VK_COMPACT=1 turns it on
+    static const bool v = getenv("RX_VK_COMPACT") ? vram_compact::enabled(getenv("RX_VK_COMPACT"))
+                                                  : dev.props.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
     return v;
 }
 /// (LaküenRecomp) The compaction's hold, % of the allowance: RX_VK_COMPACT_PCT (50 to 90), else 90 on a card of 8 GB or less, 85

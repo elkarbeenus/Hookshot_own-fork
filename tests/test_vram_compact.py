@@ -34,7 +34,7 @@ def check_source():
     tex = (ROOT / "gpu/vk/vk_texture.cpp").read_text(encoding="utf-8")
     vma = (ROOT / "gpu/vk/vk_vma.cpp").read_text(encoding="utf-8")
     # (the compaction is on unless RX_VK_COMPACT=0: the rule is vram_compact::enabled, run below)
-    need("vk_texture.cpp: compact_on()", block(tex, "bool compact_on()"), ['vram_compact::enabled(getenv("RX_VK_COMPACT"))'])
+    need("vk_texture.cpp: compact_on()", block(tex, "bool compact_on()"), ['vram_compact::enabled(getenv("RX_VK_COMPACT"))', 'VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU'])
     # (a texture that is not a render target's goes to the textures' pool only when they are compacted, in a branch before the
     # render targets' pool and blocks, which stay as they are)
     make = block(tex, "Texture* create(const Key& key")
