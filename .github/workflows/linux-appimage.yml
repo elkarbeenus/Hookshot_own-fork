@@ -51,7 +51,7 @@ jobs:
     if: >-
       github.ref_name != 'builder-parts' && github.ref_name != 'linux-parts' && github.ref_name != 'nightly'
       && github.ref_name != 'rc'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # (this fork: ubuntu-latest is moving to Ubuntu 26 and its runners did not pick the job up, 2026-11-11)
     # (this fork: the container's own resolver failed every lookup on 2026-11-11 ("Could not resolve archive.ubuntu.com"
     # from the first apt-get update, four runs in a row); public resolvers given directly)
     # (this fork: Ubuntu 24.04, whose own archive has GCC 13: Launchpad, which the toolchain PPA needs, and its keyserver
