@@ -138,6 +138,7 @@ def desktop_exec(path):
     return '"%s"' % escaped.replace("%", "%%")
 
 
+APP_NAME = "LaküenRecompOoT"   # (this fork's name in the windows, dialogs and menu entry; folders and files keep hookshot)
 APP_ID = "io.github.NotRexed.Hookshot"   # (the game's window names itself so: host/posix/display_sdl.c's HOS_APP_ID)
 
 
@@ -152,9 +153,9 @@ def add_to_menu(folder):
     apps = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "applications")
     os.makedirs(apps, exist_ok=True)
     with open(os.path.join(apps, "hookshot.desktop"), "w", encoding="utf-8") as f:
-        f.write("[Desktop Entry]\nType=Application\nName=Hookshot\nComment=The Legend of Zelda: Ocarina of Time, built from your copy\n"
+        f.write("[Desktop Entry]\nType=Application\nName=%s\nComment=The Legend of Zelda: Ocarina of Time, built from your copy\n"
                 "Exec=%s\nPath=%s\nIcon=%s\nCategories=Game;\nTerminal=false\nStartupWMClass=%s\n"
-                % (desktop_exec(os.path.join(folder, "hookshot")), folder, icon, APP_ID))
+                % (APP_NAME, desktop_exec(os.path.join(folder, "hookshot")), folder, icon, APP_ID))
 
 
 def free_gb(path):
@@ -333,7 +334,7 @@ def _arg(name):
 class Builder(tk.Tk):
     def __init__(self, launch=None, update=None, fetched=False, tag=None):
         super().__init__()
-        self.title("Hookshot Builder")
+        self.title(APP_NAME + " Builder")
         self.apply_scale()
         self.apply_theme()
         self.minsize(self.px(760), self.px(520))
@@ -606,8 +607,8 @@ class Builder(tk.Tk):
         if self.images.get("logo") is not None:
             canvas.create_image(x, px(32), image=self.images["logo"], anchor="w")
             x += self.images["logo"].width() + px(10)
-        canvas.create_text(x, px(32), text="Hookshot", font="HsBrand", fill=INK, anchor="w")
-        x += int(self.tk.call("font", "measure", "HsBrand", "Hookshot"))
+        canvas.create_text(x, px(32), text=APP_NAME, font="HsBrand", fill=INK, anchor="w")
+        x += int(self.tk.call("font", "measure", "HsBrand", APP_NAME))
         if chip:
             canvas.create_text(x + px(12), px(32), text=chip, font="HsSmall", fill=INK_SOFT, anchor="w")
         self.header_canvas = canvas
@@ -672,7 +673,7 @@ class Builder(tk.Tk):
 
     # ---- the form ----
     def show_form(self):
-        self.title("Hookshot Builder")
+        self.title(APP_NAME + " Builder")
         if self.page:
             self.page.destroy()
         px = self.px
@@ -888,14 +889,14 @@ class Builder(tk.Tk):
         elif game:
             self.launch_status.set("Up to date")
         else:
-            self.launch_status.set("Could not check for updates (GitHub did not answer)" if self.latest is None else "Hookshot")
+            self.launch_status.set("Could not check for updates (GitHub did not answer)" if self.latest is None else APP_NAME)
         if hasattr(self, "launch_update"):
             self.launch_update.pack(side="right", padx=self.px(4)) if show else self.launch_update.pack_forget()
 
     def show_launch(self, folder):
         if self.page:
             self.page.destroy()
-        self.title("Hookshot")
+        self.title(APP_NAME)
         px = self.px
         page = self.page = ttk.Frame(self)
         page.pack(fill="both", expand=True)
@@ -939,7 +940,7 @@ class Builder(tk.Tk):
         old, new = linux_update.release_key(have), linux_update.release_key(target)
         if not (self.switching() and old and new and new < old):
             return True
-        return messagebox.askyesno("Hookshot", "%s is older than %s, the version you have now. Install %s?" % (target, have, target))
+        return messagebox.askyesno(APP_NAME, "%s is older than %s, the version you have now. Install %s?" % (target, have, target))
 
     def begin_update(self, folder=None):
         if folder is not None:
@@ -1022,20 +1023,20 @@ class Builder(tk.Tk):
         out = os.path.expanduser(self.out.get().strip())
         if self.kind.get() == "nup":
             if not os.path.isfile(self.nup.get()):
-                return messagebox.showerror("Hookshot", "Choose your game's .nup file.")
+                return messagebox.showerror(APP_NAME, "Choose your game's .nup file.")
             src = ["--nup", self.nup.get()]
         else:
             if not (os.path.isdir(self.romfs.get()) and os.path.isdir(self.exefs.get())):
-                return messagebox.showerror("Hookshot", "Choose your game's romfs and exefs folders.")
+                return messagebox.showerror(APP_NAME, "Choose your game's romfs and exefs folders.")
             src = ["--romfs", self.romfs.get(), "--exefs", self.exefs.get()]
         if not out:
-            return messagebox.showerror("Hookshot", "Choose where to save the game.")
+            return messagebox.showerror(APP_NAME, "Choose where to save the game.")
         try:
             jobs = make_game.requested_jobs(os.environ.get("HOOKSHOT_JOBS"))
             if jobs is None and os.environ.get("RX_JOBS"):   # (the older setting, still honoured)
                 jobs = toolchain.default_jobs()
         except ValueError as error:
-            return messagebox.showerror("Hookshot", str(error))
+            return messagebox.showerror(APP_NAME, str(error))
         code = next((c for c, n in make_game.LANGUAGES if n == self.language.get()), "en-US")
         dlss = bool(self.dlss.get()) if hasattr(self, "dlss") else False
         self.cfg.update(kind=self.kind.get(), nup=self.nup.get(), romfs=self.romfs.get(), exefs=self.exefs.get(), out=out, language=code,
@@ -1047,7 +1048,7 @@ class Builder(tk.Tk):
             ([] if jobs is None else ["--jobs", str(jobs)]) + ([] if self.prepare.get() else ["--no-prepare-shaders"]) + \
             (dlss_args(True) if dlss else [])
         slow = slow_disk_warning(out)   # (a warning, not a stop: a hard drive still builds, only much slower)
-        if slow is not None and not messagebox.askokcancel("Hookshot", slow):
+        if slow is not None and not messagebox.askokcancel(APP_NAME, slow):
             return
         self.show_progress()
         self.started = time.time()
@@ -1253,7 +1254,7 @@ class Builder(tk.Tk):
 
     def close(self):
         if self.proc and self.proc.poll() is None:
-            if not messagebox.askyesno("Hookshot", "Stop the build and close?"):
+            if not messagebox.askyesno(APP_NAME, "Stop the build and close?"):
                 return
             os.killpg(self.proc.pid, signal.SIGTERM)
         self.destroy()

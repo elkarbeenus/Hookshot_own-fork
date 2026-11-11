@@ -50,7 +50,12 @@ extern const char hos_main_build_id[];                 /* (gen/hos_image.c: main
 /* (oot-recomp) MKW's own hooks at fixed guest addresses (its frame pacer in nvn_native.c / nn_vi.c, its idle loop in
    hos_thread.c) run only when the lifted main is Mario Kart World's: any other game has other code there */
 int hos_game_is_mkw(void);
-#define HOS_GAME_TITLE "Hookshot"
+/* (LaküenRecompOoT) the fork's name in window titles; ASCII on Windows, whose -A window calls are not UTF-8 */
+#ifdef _WIN32
+#define HOS_GAME_TITLE "LakuenRecompOoT"
+#else
+#define HOS_GAME_TITLE "Lak\xC3\xBC" "enRecompOoT"
+#endif
 void hos_commit(uint64_t addr, uint64_t size);         /* (mkw_glue.c) guest pages made usable by host APIs */
 #if defined(A64_WRITE_TRACK) && !defined(__EMSCRIPTEN__)
 void hos_mark_written(const void *p, size_t n);   /* (hos_mem.c: guest memory written by host code, native soft watch) */

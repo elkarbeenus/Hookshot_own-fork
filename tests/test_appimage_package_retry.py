@@ -51,6 +51,7 @@ def bootstrap(root):
     return "\n".join(lines) + "\n"
 
 
+@unittest.skip("(this fork) the AppImage job builds in Ubuntu 24.04 with GCC 13 from its archive: no PPA bootstrap to retry")
 @unittest.skipIf(os.name == "nt", "POSIX AppImage package bootstrap")
 class PackageRetry(unittest.TestCase):
     def run_bootstrap(self, stage="", failures=0):
