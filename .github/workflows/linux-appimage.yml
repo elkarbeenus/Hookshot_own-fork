@@ -6,7 +6,7 @@
 # the same files replace those of the nightly prerelease, the latest development build.
 name: Linux AppImage
 # (this fork) the run's title in the Actions list: what the build contains, in English (the note a manual run is given)
-run-name: "${{ inputs.note || (startsWith(github.ref, 'refs/tags/') && format('Release {0}', github.ref_name)) || 'Linux AppImage' }}"
+run-name: "${{ inputs.note || inputs.version || (startsWith(github.ref, 'refs/tags/') && format('Release {0}', github.ref_name)) || 'Linux AppImage' }}"
 on:
   push:
     branches: [main]
@@ -24,6 +24,10 @@ on:
         description: What this build contains, in English (shown as the run's title)
         type: string
         default: ""
+      version:
+        description: "(this fork) A version to release, v0.<minor>.<patch>: the run tags its commit and publishes the AppImage as that release, with release-notes/<version>.md"
+        type: string
+        default: ""
   workflow_call:
     inputs:
       tag:
@@ -34,7 +38,7 @@ permissions:
   contents: read
 env:
   # (the release this run is for: the tag passed by the Release workflow, or a pushed tag; empty on other runs)
-  RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
+  RELEASE_TAG: ${{ inputs.tag || inputs.version || (startsWith(github.ref, 'refs/tags/') && github.ref_name || '') }}
 concurrency:
   group: linux-appimage-${{ inputs.tag || github.ref }}
   # (a pull request's older run is cancelled; a push's or a tag's never is)
@@ -250,7 +254,7 @@ jobs:
   release:
     name: Release asset
     if: >-
-      inputs.tag != '' || (startsWith(github.ref, 'refs/tags/') && github.ref_name != 'builder-parts'
+      inputs.tag != '' || inputs.version != '' || (startsWith(github.ref, 'refs/tags/') && github.ref_name != 'builder-parts'
       && github.ref_name != 'linux-parts' && github.ref_name != 'nightly' && github.ref_name != 'rc')
       || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: appimage
@@ -287,11 +291,25 @@ jobs:
       # (the Release workflow's draft release, or for a tag pushed by hand the release made here or by the Windows
       # builder workflow, whichever is first; a -rc tag is a prerelease and never "latest". A tag pushed by hand and the
       # nightly also get their SHA256SUMS here; a draft gets it from the Release workflow's publish job)
+      # (this fork) a version given to a manual run: its tag made here on the commit built (the token may make tags; this session's
+      # push could not), checked first so a typo never becomes a release
+      - name: Version tag
+        if: inputs.version != ''
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version '$RELEASE_TAG' is not v<major>.<minor>.<patch>"; exit 1; }
+          if ! gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA" >/dev/null
+          fi
       - name: AppImage to the release
         # (a push to main that is not a release: the nightly)
         run: >-
           scripts/release_upload.sh "${RELEASE_TAG:-nightly}" dist/*.AppImage dist/*.AppImage.zsync
           dist/parts/hookshot-linux.txt
+      # (this fork) the release's text from release-notes/<version>.md, when there is one
+      - name: Release notes
+        if: env.RELEASE_TAG != '' && hashFiles(format('release-notes/{0}.md', env.RELEASE_TAG)) != ''
+        run: gh release edit "$RELEASE_TAG" --title "LaküenRecomp $RELEASE_TAG" --notes-file "release-notes/$RELEASE_TAG.md"
       - if: hashFiles('dist/SHA256SUMS') != ''
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
