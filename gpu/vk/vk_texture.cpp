@@ -1872,8 +1872,11 @@ Texture* create(const Key& key, const nvn_tex* t, VkFormat vf, bool astc, int bw
     {   // huge textures leave out their top levels: wider than RX_VK_TEX_MAX_DIM (default 2048) once they would take
         // 64 MB, and down to RX_VK_TEX_MAX_MB (default 512) whatever their size (MKW's terrain material arrays are
         // 8192 x 8192 x 68 ASTC: 24 GB as RGBA8)
-        static const uint32_t max_dim = getenv("RX_VK_TEX_MAX_DIM") ? (uint32_t)atoi(getenv("RX_VK_TEX_MAX_DIM")) : 2048;
-        static const uint64_t max_bytes = (uint64_t)(getenv("RX_VK_TEX_MAX_MB") ? atoi(getenv("RX_VK_TEX_MAX_MB")) : 1536) << 20;
+        // (handheld-rdna2) An AMD integrated GPU (Steam Deck, Legion Go S) shares 16 GB with the game: 1024 and 128 MB, the
+        // values Deck players report keep Hyrule Field from running out of memory (a camera sweep paged ~7 GiB to swap)
+        static const bool handheld_gpu = dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+        static const uint32_t max_dim = getenv("RX_VK_TEX_MAX_DIM") ? (uint32_t)atoi(getenv("RX_VK_TEX_MAX_DIM")) : handheld_gpu ? 1024 : 2048;
+        static const uint64_t max_bytes = (uint64_t)(getenv("RX_VK_TEX_MAX_MB") ? atoi(getenv("RX_VK_TEX_MAX_MB")) : handheld_gpu ? 128 : 1536) << 20;
         const uint32_t texel = astc ? 4 : std::max(1, bpb / std::max(1, bw * bh));
         auto bytes_at = [&](uint32_t skip) {
             uint64_t px = 0;

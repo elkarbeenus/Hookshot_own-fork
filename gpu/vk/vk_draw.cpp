@@ -2083,10 +2083,13 @@ VkPipeline build_graphics(const Program& p, const NvnState& s, const Targets& at
         // tables) hung the GPU when the driver's optimizer built them: a device lost one to four minutes into Kokiri, each time with
         // another of them first (RX 6600, issues 461 and 484); never in runs where they were built without it. They are built
         // without it on AMD. RX_VK_MESH_OPT=1: with it, as the others)
+        // (handheld-rdna2, as upstream PR 1965 and the Steam Deck fork: AMD's own drivers only. RADV builds them optimized; with
+        // its optimizer off the Deck paged and corrupted, with it on the opening played through without a GPU timeout. OoT's task +
+        // mesh draws take the compute path on RDNA2 under RADV anyway, so this is the mesh-only programs)
         static const bool amd = [] {
             VkPhysicalDeviceProperties pr{};
             vkGetPhysicalDeviceProperties(dev.physical, &pr);
-            return pr.vendorID == 0x1002;
+            return pr.vendorID == 0x1002 && dev.driver_id != VK_DRIVER_ID_MESA_RADV;
         }();
         static const bool mesh_opt = getenv("RX_VK_MESH_OPT") != nullptr;
         if (amd && !mesh_opt) {
