@@ -34,6 +34,7 @@ struct Texture {
     // height stay the game's (uploads, copies and read-backs address its texels, inside the image); passes that render into it
     // are scaled to the image (vk_draw.cpp targets), and sampling, by normalized coordinates, reads the finer map
     float rs = 1.0f;
+    bool shadow_map = false;   // (LaküenRecomp handheld) taken for a shadow map (shadow_res::qualifies), whatever its scale
     // (a huge array kept whole as a sparse resident image instead: each layer gets device memory when it is first
     // written, so only what the game streams in costs VRAM. MKW's terrain arrays, 8192 x 8192 x 68 BC6H: 5.8 GB
     // each, written by the GPU's copies into level 0, which a texture with its top level left out lost)
@@ -108,6 +109,8 @@ inline uint32_t image_height(const Texture* t) { return shadow_res::image_size(t
 /// A texture made larger found rendered with colour targets: not a shadow map, so its size and format are made at the
 /// game's size from now on
 void shadow_res_refuse(const Texture* t);
+float shadow_scale();   // (LaküenRecomp handheld: the shadow maps' scale, vk_texture.cpp)
+bool shadows_off();     // (LaküenRecomp handheld: LAKUEN_SHADOWS=0)
 
 /// Makes texels [x, x + w) x [y, y + h) of level `level`, layers [first, first + count), of a sparse texture resident
 /// (device memory bound to the sparse blocks they fall in) before anything writes them; true when they are (always,

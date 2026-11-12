@@ -6470,6 +6470,8 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
         static const int no_mesh = getenv("RX_VK_NO_MESH") ? atoi(getenv("RX_VK_NO_MESH")) : 0;
         if ((no_mesh == 1 && d.mesh) || (no_mesh == 2 && !d.mesh)) return;
     }
+    // (LaküenRecomp handheld, LAKUEN_SHADOWS=0) a depth-only pass over a shadow map draws nothing: no shadows
+    if (!at.n && at.depth && at.depth->shadow_map && shadows_off()) return;
     if (!cp) {   // (hookshot) which draw has no program, 12 times: its stages' native code keys
         static std::atomic<int> told{0};
         if (told++ < 12) logf("vk: a draw without a program (frame %llu); its code:%s", (unsigned long long)texture_frame_no(),

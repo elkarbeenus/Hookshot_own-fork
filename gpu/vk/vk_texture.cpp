@@ -1962,6 +1962,28 @@ bool shadow_res_refused(uint32_t w, uint32_t h, int nvn_format) {
     return shadow_res_no.count(shadow_res_key(w, h, nvn_format)) != 0;
 }
 }  // namespace
+/// (LaküenRecomp handheld) The shadow maps' scale: LAKUEN_SHADOW_SCALE=<0.25-4> over all; else on an AMD integrated GPU (Steam
+/// Deck, Legion Go S) with the Shadow resolution row at Game, 0.5: the sun's cascades 800 a side instead of 1600, the characters'
+/// 384 instead of 768, a quarter of their pixels to draw; else the row's (shadow_resolution_factor)
+float shadow_scale() {
+    static const float f = [] {
+        if (const char* e = getenv("LAKUEN_SHADOW_SCALE")) return std::clamp((float)atof(e), 0.25f, 4.0f);
+        const float row = shadow_resolution_factor();
+        if (row == 1.0f && dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            logf("vk: shadow maps at half size on this handheld (LAKUEN_SHADOW_SCALE=1: the game's; LAKUEN_SHADOWS=0: none drawn)");
+            return 0.5f;
+        }
+        return row;
+    }();
+    return f;
+}
+/// (LaküenRecomp handheld) LAKUEN_SHADOWS=0: the shadow maps' depth-only passes draw nothing (vk_draw.cpp), the maps keep their
+/// clear: no shadows, and their draws' CPU and GPU time saved
+bool shadows_off() {
+    static const bool v = getenv("LAKUEN_SHADOWS") && atoi(getenv("LAKUEN_SHADOWS")) == 0;
+    return v;
+}
+
 void shadow_res_refuse(const Texture* t) {
     std::lock_guard lk(shadow_res_mu);
     if (shadow_res_no.insert(shadow_res_key(t->width, t->height, t->nvn_format)).second)
@@ -2067,15 +2089,17 @@ Texture* create(const Key& key, const nvn_tex* t, VkFormat vf, bool astc, int bw
         // map as it is. A size a multiple of 32 (not the scene's odd dynamic sizes); a size once seen rendered with colour
         // targets is not a shadow map and stays the game's from then on (shadow_res_refuse, vk_draw.cpp targets)
         // Each side 8192 at most, and the image 1 GB at most (shadow_res.h)
-        const float want = shadow_resolution_factor();
-        if (want > 1.0f && x.type == VK_IMAGE_TYPE_2D &&
+        const float want = shadow_scale();
+        if (x.type == VK_IMAGE_TYPE_2D &&
             shadow_res::qualifies(depth && (x.aspect & VK_IMAGE_ASPECT_DEPTH_BIT),
                                   d.target == NVN_TEXTURE_TARGET_2D || d.target == NVN_TEXTURE_TARGET_2D_ARRAY,
                                   (uint32_t)x.samples, x.levels, x.skip || x.sparse, x.width, x.height) &&
-            !shadow_res_refused(x.width, x.height, d.format)) {
+            !shadow_res_refused(x.width, x.height, d.format))
+            x.shadow_map = true;
+        if (want != 1.0f && x.shadow_map) {
             const uint32_t side = shadow_res::side(x.width, std::max(1u, x.layers), (uint32_t)std::max(2, bpb), want,
                                                    std::min<uint32_t>(8192u, dev.props.limits.maxImageDimension2D));
-            if (side > x.width) {
+            if (side != x.width) {
                 x.rs = (float)side / (float)x.width;
                 static int told;
                 if (told++ < 16)

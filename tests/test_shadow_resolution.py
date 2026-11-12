@@ -40,6 +40,9 @@ int main() {
     CHECK(!qualifies(true, true, 1, 1, false, 1600, 1280));    // (not square: a scene's depth)
     // the side
     CHECK(side(1600, 3, 2, 1.0f, 8192) == 1600);
+    CHECK(side(1600, 3, 2, 0.5f, 8192) == 800 && side(768, 1, 4, 0.5f, 8192) == 384);   // (LaküenRecomp handheld: smaller)
+    CHECK(side(512, 1, 4, 0.25f, 8192) == 256 && side(256, 1, 4, 0.5f, 8192) == 256);   // (256 a side at least)
+    CHECK(side(1000, 1, 4, 0.5f, 8192) % 32 == 0);
     CHECK(side(1600, 3, 2, 1.5f, 8192) == 2400 && side(1600, 3, 2, 2.0f, 8192) == 3200);
     CHECK(side(1600, 3, 2, 3.0f, 8192) == 4800 && side(1600, 3, 2, 4.0f, 8192) == 6400);
     CHECK(side(768, 1, 4, 1.5f, 8192) == 1152 && side(768, 1, 4, 4.0f, 8192) == 3072);

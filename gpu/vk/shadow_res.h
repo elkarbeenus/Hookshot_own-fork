@@ -20,7 +20,12 @@ inline bool qualifies(bool depth, bool two_d_or_array, uint32_t samples, uint32_
 /// The side the image of a qualifying map of side w is made at, for the row's factor want (1: the game's): w x want, at most
 /// max_dim, and stepped down by 256 until its layers of texel bytes take 1 GB at most. w itself when that is no larger
 inline uint32_t side(uint32_t w, uint32_t layers, uint32_t texel, float want, uint32_t max_dim) {
-    if (want <= 1.0f) return w;
+    if (want == 1.0f) return w;
+    if (want < 1.0f) {   // (LaküenRecomp handheld: smaller, to a multiple of 32, 256 a side at least; never larger than the game's)
+        uint32_t s = (uint32_t)(w * want + 0.5f) / 32 * 32;
+        if (s < 256) s = 256;
+        return s < w ? s : w;
+    }
     uint32_t s = (uint32_t)(w * want + 0.5f);
     if (s > max_dim) s = max_dim;
     while (s > w && (uint64_t)s * s * (layers ? layers : 1) * (texel ? texel : 1) > (1ull << 30)) s -= 256;
