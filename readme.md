@@ -10,7 +10,7 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 > [!NOTE]
 > This is **not** the official Hookshot project and is not run by its developers. All of the recompilation work is
 > NotRexed's and the Hookshot contributors' (see [Credits](#credits)). Problems you only see in this fork belong in
-> [this fork's issues](https://github.com/elkarbeenus/Hookshot_own-fork/issues), not upstream's.
+> [this fork's issues](https://github.com/elkarbeenus/LakuenRecompBuilder/issues), not upstream's.
 
 ## About this fork
 
@@ -111,7 +111,7 @@ finds. The in-game menu's banner shows the version.
 
 ### Using it
 
-1. Download `LakuenRecomp-v0.x.y-x86_64.AppImage` from this fork's latest [release](https://github.com/elkarbeenus/Hookshot_own-fork/releases/latest) (or the `LakuenRecomp-linux-x86_64` artifact of a workflow run).
+1. Download `LakuenRecomp-v0.x.y-x86_64.AppImage` from this fork's latest [release](https://github.com/elkarbeenus/LakuenRecompBuilder/releases/latest) (or the `LakuenRecomp-linux-x86_64` artifact of a workflow run).
 2. `chmod +x LakuenRecomp-*-x86_64.AppImage` (unzip it first if it came as an artifact), and start it.
 3. Everything after that is as upstream describes below in [On Linux](#on-linux).
 
