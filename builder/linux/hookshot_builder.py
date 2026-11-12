@@ -531,6 +531,17 @@ def _arg(name):
     return None
 
 
+def power_off(run=subprocess.run):
+    """(LaküenRecomp) Shut the device down (the build's "Shut down when done"): systemd's, else logind's; True when asked"""
+    for command in (["systemctl", "poweroff"], ["loginctl", "poweroff"]):
+        try:
+            if run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30).returncode == 0:
+                return True
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
+
+
 def profile_question(profile, again):
     """(LaküenRecomp) The question the builder asks before applying a device profile"""
     head = ("New recommended settings for your %s." if again else "This looks like a %s.") % profile["title"]
@@ -1445,6 +1456,11 @@ class Builder(tk.Tk):
         self.buttons = ttk.Frame(f)
         self.buttons.grid(row=4, column=0, sticky="e", pady=(px(14), 0))
         ttk.Button(self.buttons, text="Cancel", command=self.cancel, cursor="hand2").pack(side="right")
+        # (LaküenRecomp) for a build or an update overnight: the device shuts down when it ends, after a minute to stop it
+        if not hasattr(self, "shutdown_after"):
+            self.shutdown_after = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self.buttons, text="Shut down when done", variable=self.shutdown_after,
+                        cursor="hand2").pack(side="right", padx=(0, px(16)))
         self.stage_text.set("Starting")
 
     def tick(self):
@@ -1552,6 +1568,9 @@ class Builder(tk.Tk):
     def on_exit(self, code):
         self.proc = None
         self.time_text.set("")   # (the clock and its countdown are a running build's; the line above says how it ended)
+        shut_down = bool(getattr(self, "shutdown_after", None) and self.shutdown_after.get())
+        if shut_down and str(getattr(self, "error", "") or "").startswith("Build cancelled"):
+            shut_down = False   # (cancelled by hand: the player is here)
         for w in self.buttons.winfo_children():
             w.destroy()
         folder = getattr(self, "built", None)
@@ -1583,6 +1602,32 @@ class Builder(tk.Tk):
             ttk.Button(self.buttons, text="Back", command=self.show_form, cursor="hand2").pack(side="right", padx=self.px(4))
             self.heading.configure(text="The build stopped")
             self.stage_label.configure(style="Bad.Stage.TLabel")
+        if shut_down:
+            for name in ("shutdown_note", "shutdown_stop"):   # (this run's buttons are new: none of the last run's widgets)
+                if hasattr(self, name):
+                    delattr(self, name)
+            self.shutdown_countdown(60)
+
+    def shutdown_countdown(self, left):   # (LaküenRecomp: "Shut down when done", with a minute to stop it)
+        if not hasattr(self, "shutdown_note"):
+            self.shutdown_note = tk.StringVar()
+            self.shutdown_stop = ttk.Button(self.buttons, text="Don't shut down", cursor="hand2",
+                                            command=lambda: setattr(self, "shutdown_cancelled", True))
+            self.shutdown_stop.pack(side="left", padx=self.px(4))
+            ttk.Label(self.buttons, textvariable=self.shutdown_note, style="Note.TLabel").pack(side="left", padx=self.px(8))
+            self.shutdown_cancelled = False
+        if self.shutdown_cancelled:
+            self.shutdown_note.set("Not shutting down.")
+            self.shutdown_stop.destroy()
+            return
+        if left > 0:
+            self.shutdown_note.set("Shutting down in %d s" % left)
+            self.after(1000, lambda: self.shutdown_countdown(left - 1))
+            return
+        self.shutdown_note.set("Shutting down...")
+        self.update_idletasks()
+        if not power_off():
+            self.shutdown_note.set("The device could not be shut down (systemctl poweroff refused).")
 
     def cancel(self):
         if self.proc and self.proc.poll() is None:

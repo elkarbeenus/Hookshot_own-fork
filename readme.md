@@ -44,6 +44,8 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   Settings kept from an older version get a one-time fix per device (each with a marker file beside
   `hookshot_options.ini`, so a player's later choice stays).
 - `hookshot_env.txt` takes this fork's `LAKUEN_` switches too. (`host/hos_main.c`)
+- **Shut down when done:** a box on the build's and the update's page shuts the device down when the build ends (a
+  minute's countdown with **Don't shut down** first; not after Cancel), for a build overnight. (`builder/linux/hookshot_builder.py`)
 
 **Graphics (RDNA2 on RADV)**
 
