@@ -4118,6 +4118,10 @@ void texture_frame(uint64_t completed) {
         // all of Kokiri gameplay, which stages ~nothing. A scene change makes the ones it needs again. RX_VK_STAGING_KEEP_MB=256: as before)
         static const uint64_t keep = []() -> uint64_t {
             if (const char* e = getenv("RX_VK_STAGING_KEEP_MB")) return (uint64_t)atoi(e) << 20;
+            // (LaküenRecomp handheld) an AMD integrated GPU (Steam Deck, Legion Go S): 256 MB. Its arenas are system memory either
+            // way (no BAR VRAM to give back), and making one there cost 12-388 ms on a Steam Deck, 24 of them ~3 s, most in the
+            // scene changes after the idle ones had been freed (Kokiri Forest's entry froze for seconds)
+            if (dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) return 256ull << 20;
             uint64_t used = 0, allowed = 0;
             return (vram_usage(&used, &allowed) && allowed <= (6ull << 30) + (512ull << 20) ? 64ull : 256ull) << 20;
         }();
@@ -4126,7 +4130,9 @@ void texture_frame(uint64_t completed) {
             const bool idle = it->value <= completed && it->value != rec_value;
             // (and one nothing has staged into for 30 s: Kokiri Forest's gameplay stages next to nothing, and the 64 MB it kept are VRAM
             // behind the BAR. A load makes one again. RX_VK_STAGING_IDLE_S=<n>: that long, 0: kept)
-            static const int64_t idle_s = getenv("RX_VK_STAGING_IDLE_S") ? atoll(getenv("RX_VK_STAGING_IDLE_S")) : 30;
+            // (LaküenRecomp handheld: kept on an AMD integrated GPU, where an idle arena is plain system memory, not VRAM)
+            static const int64_t idle_s = getenv("RX_VK_STAGING_IDLE_S") ? atoll(getenv("RX_VK_STAGING_IDLE_S"))
+                : dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 0 : 30;
             const bool stale = idle_s && std::chrono::steady_clock::now() - it->used_at > std::chrono::seconds(idle_s);
             if (idle && (it->size > kArena || kept + it->size > keep || stale)) {
                 destroy_buffer(it->buffer, it->allocation);

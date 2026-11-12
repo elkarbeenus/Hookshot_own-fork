@@ -3742,8 +3742,26 @@ static int handheld_resolution_for(const char* name) {
 /// kept by an update): the device's fixed share and no frame generation. Auto followed the game's dynamic size, which since
 /// v0.2.0 stays at the full output, and a Steam Deck fell to 10-16 fps. A marker file beside hookshot_options.ini keeps it to
 /// once, so a player who picks Auto again keeps it. LAKUEN_HANDHELD_RES=0: off
+/// (LaküenRecomp handheld) Once, on an AMD integrated GPU whose saved options say Profile Docked (options from before, kept by an
+/// update): the Handheld profile. Docked, a Steam Deck drew the game's picture at 2304x1440 for a 1280x800 screen (HUD,
+/// post-processing and frame interpolation at 3.6x the screen's pixels) and spent ~20 ms of GPU a frame; the Handheld profile
+/// is the game's own 1536x864 picture and its lighter settings (a settled room ~15 -> ~19.5 fps, Hookshot-SteamDeck H1). The
+/// game reads the profile at its start, so it applies from the next one. A marker file keeps it to once.
+/// LAKUEN_HANDHELD_PROFILE=0: off
+static void handheld_profile_once(const VkPhysicalDeviceProperties& props) {
+    if (!env_int("LAKUEN_HANDHELD_PROFILE", 1) || env_holds(&opts.handheld) || opts.handheld != 0) return;
+    const std::string marker = ini_path() + ".handheld_profile";
+    if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    opts.handheld = 1;
+    save();
+    if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
+    logf("vk: %s: Profile set once to Handheld (the game's 1536x864 picture, not 2304x1440 for a handheld screen), from the "
+         "next start (LAKUEN_HANDHELD_PROFILE=0: leave the options)", props.deviceName);
+}
+
 static void handheld_resolution_once(const VkPhysicalDeviceProperties& props) {
     if (props.vendorID != 0x1002 || props.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) return;
+    handheld_profile_once(props);
     if (!env_int("LAKUEN_HANDHELD_RES", 1) || env_holds(&opts.resolution) || opts.resolution != 0) return;
     const std::string marker = ini_path() + ".handheld_res";
     if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
