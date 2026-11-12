@@ -465,6 +465,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | HDR contrast | 50% to 200% around mid grey (while HDR is on) | 100% |
 | | HDR tone mapper | Vanilla (the game's curve), PsychoV35 (RenoDX's; with HDR set to Native. DLSS, FSR and TAAU do not take its scene yet: the game's own upscale runs) | Vanilla |
 | | Anisotropic filtering | Game's, 2x, 4x, 8x, 16x | 16x |
+| | Shadow resolution | Game, 1.5x, 2x, 3x, 4x (after a restart; on AMD handhelds the maps are drawn at half size while it is at Game: `LAKUEN_SHADOW_SCALE`, `LAKUEN_SHADOWS=0` none) | Game |
 | | GPU device | Auto, or each graphics card by name (after a restart) | Auto |
 | | VRAM budget | Auto, 3.6, 4.8, 6, 7.5, 9, 11 GB (2.2 GB only from the Minimum (4GB) preset); a quality preset sets it | Auto |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |
