@@ -50,7 +50,10 @@ struct Image {
     bool bc, sparse;
     int samples;
     uint64_t allocation, bytes = 0, pad = 0;
+    float rs = 1.0f;   // (Shadow resolution: the image's scale; 1 in these cases)
 };
+uint32_t image_width(const Image* x) { return x->width; }
+uint32_t image_height(const Image* x) { return x->height; }
 uint64_t allocation_size(uint64_t allocation) { return allocation; }
 bool env_on(const char*) { return false; }
 uint64_t total_bytes;
