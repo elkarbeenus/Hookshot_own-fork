@@ -141,7 +141,7 @@ finds. The in-game menu's banner shows the version.
 
 ### Using it
 
-1. Download `LakuenRecomp-v0.x.y-x86_64.AppImage` from this fork's latest [release](https://github.com/elkarbeenus/LakuenRecompBuilder/releases/latest) (or the `LakuenRecomp-<version>-<PC|Handheld>-run<n>` artifact of a workflow run).
+1. Download `LakuenRecomp-v0.x.y-x86_64.AppImage` from this fork's latest [release](https://github.com/elkarbeenus/LakuenRecompBuilder/releases/latest) (or the `LakuenRecomp-<version>-All-run<n>` artifact of a workflow run: one for every device).
 2. `chmod +x LakuenRecomp-*-x86_64.AppImage` (unzip it first if it came as an artifact), and start it.
 3. Everything after that is as upstream describes below in [On Linux](#on-linux).
 

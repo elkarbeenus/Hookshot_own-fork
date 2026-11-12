@@ -237,7 +237,7 @@ jobs:
         shell: bash
         run: |
           app=$(basename "$(ls build-linux/*-x86_64.AppImage | head -1)" -x86_64.AppImage)
-          case "$GITHUB_REF_NAME" in handheld) line=Handheld ;; handheld-rdna2|main) line=PC ;; *) line="${GITHUB_REF_NAME//\//-}" ;; esac
+          case "$GITHUB_REF_NAME" in handheld) line=Handheld ;; handheld-rdna2|main) line=All ;; *) line="${GITHUB_REF_NAME//\//-}" ;; esac
           echo "ARTIFACT_NAME=${app}-${line}-run${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
           echo "artifact: ${app}-${line}-run${GITHUB_RUN_NUMBER}"
 
