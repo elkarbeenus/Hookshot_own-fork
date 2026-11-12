@@ -38,6 +38,10 @@ struct Options {
                           // device's limit at most; gpu/vk/vk_draw.cpp aniso_override, RX_VK_ANISO over it)
     int shadow_res = 0;   // (LaküenRecomp) the shadow quality: 0 the game's, 1 half, 2 a third, 3 a quarter, 4 none; read once, at
                           // the start (vk_texture.cpp create, shadow_resolution_factor)
+    int effect_1 = 1, effect_2 = 1, effect_3 = 1, effect_4 = 1;   // (LaküenRecomp) the Effect pass rows: 1 drawn, 0 left out
+                          // (menu_effect_off, vk_draw.cpp: costly passes a Steam Deck's GPU timing found; live)
+    int shader_prep = 0;  // (LaküenRecomp) Shader preparation: 0 all at the start (the precompile), 1 as the game asks; read once,
+                          // from the file (vk_draw.cpp precompile_wanted, menu_file_int)
     int realtime = 1;     // game time follows the clock (host/nn_vi.c); 0: per frame (slower frames, slower game)
     int handheld = 0;     // the game's handheld profile: ~4 fps, softer; read once, at the start (host/nn_applet.c)
     int ultrawide = 1;    // the Aspect ratio row. Saved as ultrawide=, read once, at the start (host/hos_main.c): 1 the monitor's own
@@ -122,6 +126,8 @@ bool resolution_auto();       // (the game's dynamic resolution: Resolution Auto
 int resolution_scale();       // (the fixed path's scale in 1/10000: the Resolution row's, as a twelfth of the output)
 float shadow_resolution_factor();   // (the Shadow quality row's scale as it was at the start: 1 the game's)
 bool menu_shadows_off();           // (LaküenRecomp: the Shadow quality row at Off)
+bool menu_effect_off(uint64_t key);   // (LaküenRecomp: an Effect pass row at Off names this program)
+int menu_file_int(const char* key, int def);   // (LaküenRecomp: the last <key>= line of hookshot_options.ini, before the menu loads)
 void menu_option_set(int id, int value);   // (from the game's side: 7 the mouse's sensitivity, the - and = keys)
 int menu_setting(int index, MkwVkSetting* out);   // (the control bridge, host/control.c: the rows with a value)
 int menu_setting_set(const char* key, int value, MkwVkSetting* out);

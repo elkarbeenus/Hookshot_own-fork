@@ -78,6 +78,10 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   upstream's larger sizes) goes down to a quarter or Off on every device; `LAKUEN_SHADOW_SCALE=<0.25-4>` sets any size (1: the
   game's), `LAKUEN_SHADOWS=0` draws none. (`gpu/vk/shadow_res.h`, `gpu/vk/vk_draw.cpp`)
 - The game's code is tuned for the Legion Go S's Zen 3+ cores, as for the Deck's Zen 2. (`nx2/host_cpu.py`)
+- While RAM is short the idle upload memory goes and the heap is trimmed at once. The Graphics tab's **Shader preparation**
+  row (this fork's) makes the shaders as the game asks instead of all at the start, where the start's 18,713 programs and
+  25,337 pipelines held ~4 GB of a Steam Deck's RAM; four **Effect pass** rows leave the costliest passes after the shadows
+  out, at once. The handheld profiles (version 3) set both. (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`, `gpu/vk/vk_menu.cpp`)
 - The game reports which profile it starts with (`oe: profile ...` in the log). (`host/nn_applet.c`)
 
 - The first start uses the menu's Handheld settings with frame generation off (`RX_VK_AUTO_HANDHELD=0` keeps the docked
@@ -499,6 +503,11 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | HDR tone mapper | Vanilla (the game's curve), PsychoV35 (RenoDX's; with HDR set to Native. DLSS, FSR and TAAU do not take its scene yet: the game's own upscale runs) | Vanilla |
 | | Anisotropic filtering | Game's, 2x, 4x, 8x, 16x | 16x |
 | | Shadow quality | Game, Medium (half size), Low (a third), Very low (a quarter), Off (none drawn) (after a restart; at Game, AMD handhelds draw them at half size; `LAKUEN_SHADOW_SCALE=<0.25-4>` and `LAKUEN_SHADOWS=0` decide over the row) | Game |
+| | Effect pass 1 | On, Off: a costly pass of the game's (a 512x512 picture made now and then) drawn or left out, at once (a test row of this fork's) | On |
+| | Effect pass 2 | On, Off: a costly pass of a few full-screen draws (a test row) | On |
+| | Effect pass 3 | On, Off: a costly pass of a few full-screen draws (a test row) | On |
+| | Effect pass 4 | On, Off: a costly half-size pass (a test row) | On |
+| | Shader preparation | All at start (every shader this folder has seen made before the game, kept in RAM), As needed (each as the game asks, from the caches: far less RAM, now and then a short stutter) (after a restart; `RX_VK_PRECOMPILE` decides over the row) | All at start |
 | | GPU device | Auto, or each graphics card by name (after a restart) | Auto |
 | | VRAM budget | Auto, 3.6, 4.8, 6, 7.5, 9, 11 GB (2.2 GB only from the Minimum (4GB) preset); a quality preset sets it | Auto |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |

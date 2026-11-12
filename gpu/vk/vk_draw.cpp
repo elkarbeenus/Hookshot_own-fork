@@ -6720,6 +6720,7 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
     if (cp->key == 0x1a7482c0ec9991eaULL) world_drawn_at.store(presents_now, std::memory_order_relaxed);
     if (cp->key == 0x02ff9920c2571cc2ULL) wheel_drawn_at.store(presents_now, std::memory_order_relaxed);
     if (skip_live(cp->key)) return;   // (EvilOOT, RX_VK_SKIP_FILE)
+    if (menu_effect_off(cp->key)) return;   // (LaküenRecomp: an Effect pass row at Off)
     {   // (hookshot, RX_VK_SKIP_PROG=<key prefix,...>: draws too, their native code keys logged once; =-: none)
         // (OoT's 53509044401d78d2, by default only while its targets have no view: 128 draws, once while an area loads, that render
         // the slices of two 64^3 BC4 noise volumes through raw RGBA16UI views. Those views were not made (no attachment usage) and
@@ -7912,7 +7913,11 @@ bool precompile_wanted() {
 #else
     bool on = false;
 #endif
+    // (LaküenRecomp: Shader preparation As needed, shader_preparation=1: none made at the start; RX_VK_PRECOMPILE over it)
+    if (on && menu_file_int("shader_preparation", 0) == 1) on = false;
     if (const char* e = getenv("RX_VK_PRECOMPILE")) on = atoi(e) != 0;
+    static bool told;
+    if (!told) told = true, logf("vk: shader preparation: %s", on ? "all at the start" : "as the game asks");
     return on;
 }
 namespace {

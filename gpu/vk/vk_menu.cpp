@@ -121,6 +121,7 @@ const char* tx_framegen(int v) {
     return t[v];
 }
 const char* tx_onoff(int v) { return v ? "On" : "Off"; }
+const char* tx_shader_prep(int v) { return v ? "As needed" : "All at start"; }   // (LaküenRecomp)
 const char* tx_fps_level(int v) { return fps_stats::level_name(v); }
 const char* tx_fps_corner(int v) { return fps_stats::corner_name(v); }   // (the FPS counter row: Off, FPS, Frame time, Graph, Breakdown)
 // (LaküenRecomp) The shadow maps' quality, smaller instead of upstream's larger (opts.shadow_res; vk_texture.cpp create,
@@ -1196,6 +1197,22 @@ Row rows[] = {
      "How many pixels the shadow maps have, or none at all. Fewer pixels: softer shadows, less GPU time; Off also saves their "
      "draw calls on the CPU. Applies after a restart.",
      hn_shadow_res, true, true},
+    // (LaküenRecomp handheld) the costliest passes a Steam Deck's GPU timing found after the shadows, each left out live, to see
+    // what each one is; and the shaders made at the start or as the game asks (the start's 18,713 programs and 25,337 pipelines
+    // held ~4 GB of a Steam Deck's 16)
+    {TAB_GRAPHICS, "Effect pass 1", &opts.effect_1, 0, 1, 1, tx_onoff,
+     "A costly pass of the game's (a 512x512 picture made now and then). Off leaves it out at once: see what changes.", nullptr,
+     false, true},
+    {TAB_GRAPHICS, "Effect pass 2", &opts.effect_2, 0, 1, 1, tx_onoff,
+     "A costly pass of the game's (a few full-screen draws). Off leaves it out at once: see what changes.", nullptr, false, true},
+    {TAB_GRAPHICS, "Effect pass 3", &opts.effect_3, 0, 1, 1, tx_onoff,
+     "A costly pass of the game's (a few full-screen draws). Off leaves it out at once: see what changes.", nullptr, false, true},
+    {TAB_GRAPHICS, "Effect pass 4", &opts.effect_4, 0, 1, 1, tx_onoff,
+     "A costly pass of the game's (a half-size picture). Off leaves it out at once: see what changes.", nullptr, false, true},
+    {TAB_GRAPHICS, "Shader preparation", &opts.shader_prep, 0, 1, 1, tx_shader_prep,
+     "All at start: every shader this game folder has seen is made before the game, for no stutter, and kept in RAM. As needed: "
+     "each one as the game asks, from the caches; far less RAM, now and then a short stutter. Applies after a restart.", nullptr,
+     true, true},
     // (the rows to change when something is wrong, or on a card short of memory: last)
     {TAB_GRAPHICS, "GPU and memory", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},
     {TAB_GRAPHICS, "GPU device", &opts.gpu_device, 0, 8, 1, tx_gpu,
@@ -4247,6 +4264,26 @@ float shadow_resolution_factor() {   // (the value the game started with: textur
         return k[std::clamp(opts.shadow_res, 0, 4)];
     }();
     return f;
+}
+bool menu_effect_off(uint64_t key) {   // (LaküenRecomp: the Effect pass rows, live)
+    switch (key) {
+    case 0xe40dc98fca54ad01ULL: return !opts.effect_1;
+    case 0x701ae221d88b2908ULL: return !opts.effect_2;
+    case 0xc587820ce7551a01ULL: return !opts.effect_3;
+    case 0xda7a7ab28b8e73d9ULL: return !opts.effect_4;
+    default: return false;
+    }
+}
+int menu_file_int(const char* key, int def) {   // (LaküenRecomp: the file as written, the menu not loaded yet)
+    int v = def;
+    const size_t n = strlen(key);
+    if (FILE* f = fopen(ini_path().c_str(), "r")) {
+        char line[256];
+        while (fgets(line, sizeof line, f))
+            if (!strncmp(line, key, n) && line[n] == '=') v = atoi(line + n + 1);
+        fclose(f);
+    }
+    return v;
 }
 bool menu_shadows_off() {   // (LaküenRecomp: the Shadow quality row at Off, as the game started)
     static const bool v = opts.shadow_res == 4;

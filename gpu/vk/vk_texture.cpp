@@ -63,6 +63,8 @@
 #include "vk_work.h"   // (after the others: counts the commands that do GPU work, for full_barrier)
 
 namespace mkwvk {
+// (LaküenRecomp handheld) the system short of RAM (the RAM floor below, an integrated GPU): idle staging arenas go, malloc is trimmed
+static std::atomic<bool> lakuen_ram_short{false};
 namespace {
 
 uint64_t mix(uint64_t h, uint64_t v) {
@@ -4250,7 +4252,10 @@ void texture_frame(uint64_t completed) {
             static const int64_t idle_s = getenv("RX_VK_STAGING_IDLE_S") ? atoll(getenv("RX_VK_STAGING_IDLE_S"))
                 : dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 0 : 30;
             const bool stale = idle_s && std::chrono::steady_clock::now() - it->used_at > std::chrono::seconds(idle_s);
-            if (idle && (it->size > kArena || kept + it->size > keep || stale)) {
+            // (LaküenRecomp handheld: while the system is short of RAM none are kept: a Steam Deck held 256 MB of idle ones with
+            // 339 MB available in Kokiri Forest)
+            const uint64_t keep_now = lakuen_ram_short.load(std::memory_order_relaxed) ? 0 : keep;
+            if (idle && (it->size > kArena || kept + it->size > keep_now || stale)) {
                 destroy_buffer(it->buffer, it->allocation);
                 it = arenas.erase(it);
                 continue;
@@ -4272,7 +4277,7 @@ void texture_frame(uint64_t completed) {
             // more are free: RX_VK_MALLOC_TRIM_MB=<n>: that many, 0: never; the "vk: malloc:" line says what the arenas hold)
             // (every 1800 presents: mallinfo2 walks every free chunk of every arena with its lock held)
             static std::atomic<bool> busy{false};
-            if (frame_no % 1800 == 0 && !busy.exchange(true))
+            if ((frame_no % 1800 == 0 || lakuen_ram_short.load(std::memory_order_relaxed)) && !busy.exchange(true))
                 jobs_push([] {
                     static const uint64_t trim_mb = getenv("RX_VK_MALLOC_TRIM_MB") ? (uint64_t)atoll(getenv("RX_VK_MALLOC_TRIM_MB")) : 192;
                     const struct mallinfo2 a = mallinfo2();
@@ -4498,6 +4503,7 @@ void texture_frame(uint64_t completed) {
                 fclose(f);
             }
         }
+        lakuen_ram_short.store(floor_bytes && avail < floor_bytes, std::memory_order_relaxed);
         if (floor_bytes && avail < floor_bytes) {
             const uint64_t short_by = floor_bytes - avail;
             // (never under 1 GB of textures: freed images can stay as free space in VMA's blocks, the RAM not coming back,
