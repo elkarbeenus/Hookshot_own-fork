@@ -3732,8 +3732,33 @@ void menu_init() {
 /// the first scene that way (Discord 2026-11-10); the Minimum preset's handheld picture and budget are what such cards run.
 /// An integrated GPU or a card of up to 4.5 GB: Minimum, with the plain scale (as RX_VK_LOW_SPEC=1); up to 6.5 GB: Low; larger:
 /// the defaults, as before. Docked either way (the handheld profile gave a GTX 1050 a black picture). Options already saved are never changed. RX_VK_AUTO_PRESET=0: off
+/// (LaküenRecomp) A dedicated card of up to 8.5 GB (an 8 GB RX 6600 XT): Render resolution 75 % instead of Auto. Auto follows the
+/// game's dynamic size, which since v0.2.0 stays at the full output: on the 6600 XT the 3D went from 1440x810 to 1920x1080, the
+/// render targets took the textures' room, and the texture cache churned again (20-24 fps against 30-60 at 75 %)
+static bool small_dedicated_card(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
+    if (props.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) return false;
+    uint64_t vram = 0;
+    for (uint32_t i = 0; i < mem.memoryHeapCount; i++)
+        if (mem.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) vram = std::max<uint64_t>(vram, mem.memoryHeaps[i].size);
+    return vram && vram <= (8704ull << 20);
+}
+
+/// (LaküenRecomp) Once, for options kept by an update: Auto on such a card becomes 75 %. A marker file beside
+/// hookshot_options.ini keeps it to once, so a player who picks Auto again keeps it. LAKUEN_SMALL_VRAM_RES=0: off
+static void small_card_resolution_once(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
+    if (!small_dedicated_card(props, mem)) return;
+    if (!env_int("LAKUEN_SMALL_VRAM_RES", 1) || env_holds(&opts.resolution) || opts.resolution != 0) return;
+    const std::string marker = ini_path() + ".small_vram_res";
+    if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    opts.resolution = 2;   // (75 %)
+    save();
+    if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
+    logf("vk: %s: Render resolution Auto set once to a fixed 75 %% for a card of 8 GB or less (LAKUEN_SMALL_VRAM_RES=0: "
+         "leave the options)", props.deviceName);
+}
+
 void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
-    if (!first_start) return;
+    if (!first_start) { small_card_resolution_once(props, mem); return; }
     first_start = false;
     if (!env_int("RX_VK_AUTO_PRESET", 1)) return;
     if (env_on("RX_VK_LOW_SPEC")) return;   // (chosen already, menu_init)
@@ -3744,7 +3769,15 @@ void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkP
     // (RX_VK_AUTO_PRESET_VRAM_MB=<n>: the card's memory taken as n MB, to try the choice on a larger card)
     const uint64_t mb = getenv("RX_VK_AUTO_PRESET_VRAM_MB") ? (uint64_t)atoll(getenv("RX_VK_AUTO_PRESET_VRAM_MB")) : vram >> 20;
     const int preset = integrated || mb <= 4608 ? 1 : mb <= 6656 ? 2 : 0;
-    if (!preset) return;
+    if (!preset) {
+        // (LaküenRecomp) the defaults, but a card of up to 8.5 GB starts at Render resolution 75 % (small_dedicated_card)
+        if (small_dedicated_card(props, mem) && env_int("LAKUEN_SMALL_VRAM_RES", 1) && !env_holds(&opts.resolution)) {
+            opts.resolution = 2;
+            save();
+            logf("vk: first start on %s (%llu MB of VRAM): Render resolution 75 %%", props.deviceName, (unsigned long long)mb);
+        }
+        return;
+    }
     opts.preset = opts.budget = preset;
     apply_preset(preset);
     sync_preset_budgets(preset);
