@@ -3732,8 +3732,32 @@ void menu_init() {
 /// the first scene that way (Discord 2026-11-10); the Minimum preset's handheld picture and budget are what such cards run.
 /// An integrated GPU or a card of up to 4.5 GB: Minimum, with the plain scale (as RX_VK_LOW_SPEC=1); up to 6.5 GB: Low; larger:
 /// the defaults, as before. Docked either way (the handheld profile gave a GTX 1050 a black picture). Options already saved are never changed. RX_VK_AUTO_PRESET=0: off
+/// (LaküenRecomp handheld) The Render resolution an AMD handheld starts with: the Steam Deck (VANGOGH, 8 compute units, CPU
+/// short at ~20 fps) 50 %, the Legion Go S and other larger AMD handheld GPUs (Ryzen Z2 Go: 12 compute units) 67 %
+static int handheld_resolution_for(const char* name) {
+    return strstr(name, "VANGOGH") || strstr(name, "0405") || strstr(name, "0932") ? 4 : 3;
+}
+
+/// (LaküenRecomp handheld) Once, on an AMD integrated GPU whose saved options say Render resolution Auto (options from before,
+/// kept by an update): the device's fixed share and no frame generation. Auto followed the game's dynamic size, which since
+/// v0.2.0 stays at the full output, and a Steam Deck fell to 10-16 fps. A marker file beside hookshot_options.ini keeps it to
+/// once, so a player who picks Auto again keeps it. LAKUEN_HANDHELD_RES=0: off
+static void handheld_resolution_once(const VkPhysicalDeviceProperties& props) {
+    if (props.vendorID != 0x1002 || props.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) return;
+    if (!env_int("LAKUEN_HANDHELD_RES", 1) || env_holds(&opts.resolution) || opts.resolution != 0) return;
+    const std::string marker = ini_path() + ".handheld_res";
+    if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    opts.resolution = handheld_resolution_for(props.deviceName);
+    opts.framegen = 0;
+    restart_init();
+    save();
+    if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
+    logf("vk: %s: Render resolution Auto set once to a fixed %d %% for this handheld, frame generation off "
+         "(LAKUEN_HANDHELD_RES=0: leave the options)", props.deviceName, upscaler_rows::percent(opts.resolution));
+}
+
 void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
-    if (!first_start) return;
+    if (!first_start) { handheld_resolution_once(props); return; }
     first_start = false;
     if (!env_int("RX_VK_AUTO_PRESET", 1)) return;
     if (env_on("RX_VK_LOW_SPEC")) return;   // (chosen already, menu_init)
@@ -3759,6 +3783,8 @@ void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkP
         // (LaküenRecomp) and no frame generation: a Steam Deck ran ~20 fps short of CPU, where made frames only add GPU work out of
         // the same power budget and their lag
         opts.framegen = 0;
+        // (LaküenRecomp handheld) the device's Render resolution: the Legion Go S's larger GPU takes 67 %, the Deck keeps 50 %
+        opts.resolution = handheld_resolution_for(props.deviceName);
     }
     restart_init();   // (what this run starts with)
     save();   // (host/nn_applet.c reads handheld_profile from the file when the game first asks its mode, after this)
