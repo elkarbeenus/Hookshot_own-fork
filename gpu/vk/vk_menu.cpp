@@ -123,6 +123,16 @@ const char* tx_framegen(int v) {
 const char* tx_onoff(int v) { return v ? "On" : "Off"; }
 const char* tx_fps_level(int v) { return fps_stats::level_name(v); }
 const char* tx_fps_corner(int v) { return fps_stats::corner_name(v); }   // (the FPS counter row: Off, FPS, Frame time, Graph, Breakdown)
+// The shadow maps' size (opts.shadow_res; vk_texture.cpp create)
+const char* tx_shadow_res(int v) {
+    static const char* const t[] = {"Game", "1.5x", "2x", "3x", "4x"};
+    return t[std::clamp(v, 0, 4)];
+}
+MENU_HINTS(hn_shadow_res, 0, "The game's own: the sun's shadows 1600 pixels a side, the characters' 768 or less.",
+           "The sun's shadows 2400 a side: sharper edges, a little more GPU time.",
+           "The sun's shadows 3200 a side: sharper, and the far ones too.",
+           "The sun's shadows 4800 a side: the far shadows much sharper.",
+           "The finest: the sun's 6400 a side (about 250 MB of video memory), the characters' 3072.")
 const char* tx_profile(int v) { return v ? "Handheld" : "Docked"; }   // (opts.handheld: the Profile row)
 const char* tx_menu_shortcut(int v) {
     // (F1 is never turned off: the menu is always one key away. Esc as well, as a PC game's pause menu)
@@ -1181,6 +1191,10 @@ Row rows[] = {
     {TAB_GRAPHICS, "Anisotropic filtering", &opts.anisotropy, 0, 4, 1, tx_anisotropy,
      "Keeps textures sharp on surfaces seen at a slant, such as the ground ahead: higher is sharper in the distance, for a "
      "little GPU time. Game's is the console's own (1x or 2x).", nullptr, false, true},
+    {TAB_GRAPHICS, "Shadow resolution", &opts.shadow_res, 0, 4, 1, tx_shadow_res,
+     "How many pixels the shadow maps have. The sun's shadows lose detail with distance; more pixels keep the far ones sharp "
+     "too. Applies after a restart.",
+     hn_shadow_res, true, true},
     // (the rows to change when something is wrong, or on a card short of memory: last)
     {TAB_GRAPHICS, "GPU and memory", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},
     {TAB_GRAPHICS, "GPU device", &opts.gpu_device, 0, 8, 1, tx_gpu,
@@ -4120,8 +4134,66 @@ static void small_card_resolution_once(const VkPhysicalDeviceProperties& props, 
          "leave the options)", props.deviceName);
 }
 
+/// (LaküenRecomp handheld) The Render resolution an AMD handheld starts with: the Steam Deck (VANGOGH, 8 compute units, CPU
+/// short at ~20 fps) 50 %, the Legion Go S and other larger AMD handheld GPUs (Ryzen Z2 Go: 12 compute units) 67 %
+static int handheld_resolution_for(const char* name) {
+    return strstr(name, "VANGOGH") || strstr(name, "0405") || strstr(name, "0932") ? 4 : 3;
+}
+
+/// (LaküenRecomp handheld) Once, on an AMD integrated GPU whose saved options say Render resolution Auto (options from before,
+/// kept by an update): the device's fixed share and no frame generation. Auto followed the game's dynamic size, which since
+/// v0.2.0 stays at the full output, and a Steam Deck fell to 10-16 fps. A marker file beside hookshot_options.ini keeps it to
+/// once, so a player who picks Auto again keeps it. LAKUEN_HANDHELD_RES=0: off
+/// (LaküenRecomp handheld) Once, on an AMD integrated GPU whose saved options say Profile Docked (options from before, kept by an
+/// update): the Handheld profile. Docked, a Steam Deck drew the game's picture at 2304x1440 for a 1280x800 screen (HUD,
+/// post-processing and frame interpolation at 3.6x the screen's pixels) and spent ~20 ms of GPU a frame; the Handheld profile
+/// is the game's own 1536x864 picture and its lighter settings (a settled room ~15 -> ~19.5 fps, Hookshot-SteamDeck H1). The
+/// game reads the profile at its start, so it applies from the next one. A marker file keeps it to once.
+/// LAKUEN_HANDHELD_PROFILE=0: off
+static void handheld_profile_once(const VkPhysicalDeviceProperties& props) {
+    if (!env_int("LAKUEN_HANDHELD_PROFILE", 1) || env_holds(&opts.handheld) || getenv("HOS_HANDHELD")) return;
+    // (by the file, as host/nn_applet.c reads it at the game's start: the last handheld_profile= line, none = Docked. A Steam
+    // Deck test kept Docked (2304x1440) with no line logged here: the menu's own value had said Handheld)
+    int in_file = 0;
+    if (FILE* f = fopen(ini_path().c_str(), "r")) {
+        char line[128];
+        while (fgets(line, sizeof line, f))
+            if (!strncmp(line, "handheld_profile=", 17)) in_file = atoi(line + 17);
+        fclose(f);
+    }
+    if (in_file) return;
+    const std::string marker = ini_path() + ".handheld_profile2";
+    if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    const int before = opts.handheld;
+    opts.handheld = 1;
+    save();
+    if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
+    logf("vk: %s: Profile set once to Handheld (the game's 1536x864 picture, not 2304x1440 for a handheld screen; the file said "
+         "Docked, the menu %s), from the next start (LAKUEN_HANDHELD_PROFILE=0: leave the options)", props.deviceName,
+         before ? "Handheld" : "Docked");
+}
+
+static void handheld_resolution_once(const VkPhysicalDeviceProperties& props) {
+    if (props.vendorID != 0x1002 || props.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) return;
+    handheld_profile_once(props);
+    if (!env_int("LAKUEN_HANDHELD_RES", 1) || env_holds(&opts.resolution) || opts.resolution != 0) return;
+    const std::string marker = ini_path() + ".handheld_res";
+    if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    opts.resolution = handheld_resolution_for(props.deviceName);
+    opts.framegen = 0;
+    restart_init();
+    save();
+    if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
+    logf("vk: %s: Render resolution Auto set once to a fixed %d %% for this handheld, frame generation off "
+         "(LAKUEN_HANDHELD_RES=0: leave the options)", props.deviceName, upscaler_rows::percent(opts.resolution));
+}
+
 void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
-    if (!first_start) { small_card_resolution_once(props, mem); return; }
+    if (!first_start) {   // (options kept by an update: the one-time fixes for this device, each its own marker)
+        small_card_resolution_once(props, mem);
+        handheld_resolution_once(props);
+        return;
+    }
     first_start = false;
     if (!env_int("RX_VK_AUTO_PRESET", 1)) return;
     if (env_on("RX_VK_LOW_SPEC")) return;   // (chosen already, menu_init)
@@ -4156,6 +4228,8 @@ void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkP
         // (LaküenRecomp) and no frame generation: a Steam Deck ran ~20 fps short of CPU, where made frames only add GPU work out of
         // the same power budget and their lag
         opts.framegen = 0;
+        // (LaküenRecomp handheld) the device's Render resolution: the Legion Go S's larger GPU takes 67 %, the Deck keeps 50 %
+        opts.resolution = handheld_resolution_for(props.deviceName);
     }
     restart_init();   // (what this run starts with)
     save();   // (host/nn_applet.c reads handheld_profile from the file when the game first asks its mode, after this)
@@ -4165,6 +4239,13 @@ void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkP
 
 int menu_vsync() { return env_on("RX_VK_FIFO") ? 1 : env_on("RX_VK_IMMEDIATE") ? 2 : opts.vsync; }
 bool resolution_auto() { return opts.resolution == 0; }
+float shadow_resolution_factor() {   // (the value the game started with: textures made since keep one size)
+    static const float f = [] {
+        static const float k[] = {1.0f, 1.5f, 2.0f, 3.0f, 4.0f};
+        return k[std::clamp(opts.shadow_res, 0, 4)];
+    }();
+    return f;
+}
 int resolution_scale() {
     const float s = upscaler_rows::percent(opts.resolution) / 100.0f;
     return s > 0 ? (int)(twelfths(s) * 10000.0f / 12.0f + 0.5f) : 0;   // (the twelfth game_size labels)

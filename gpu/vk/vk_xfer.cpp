@@ -167,6 +167,28 @@ bool size_compatible(const Sub& a, const Sub& b) {
     return a.bpb == b.bpb && a.bw == b.bw && a.bh == b.bh;
 }
 
+/// 0: float or normalized, 1: unsigned integer, 2: signed integer (a blit may not mix them)
+int format_class(VkFormat f) {
+    switch (f) {
+    case VK_FORMAT_R8_UINT: case VK_FORMAT_R8G8_UINT: case VK_FORMAT_R8G8B8_UINT: case VK_FORMAT_R8G8B8A8_UINT:
+    case VK_FORMAT_B8G8R8A8_UINT: case VK_FORMAT_A2B10G10R10_UINT_PACK32: case VK_FORMAT_A2R10G10B10_UINT_PACK32:
+    case VK_FORMAT_R16_UINT: case VK_FORMAT_R16G16_UINT: case VK_FORMAT_R16G16B16A16_UINT: case VK_FORMAT_R32_UINT:
+    case VK_FORMAT_R32G32_UINT: case VK_FORMAT_R32G32B32_UINT: case VK_FORMAT_R32G32B32A32_UINT: case VK_FORMAT_S8_UINT:
+    case VK_FORMAT_A8B8G8R8_UINT_PACK32: case VK_FORMAT_R16G16B16_UINT: case VK_FORMAT_B8G8R8_UINT:
+    case VK_FORMAT_R64_UINT: case VK_FORMAT_R64G64_UINT: case VK_FORMAT_R64G64B64_UINT: case VK_FORMAT_R64G64B64A64_UINT:
+        return 1;
+    case VK_FORMAT_R8_SINT: case VK_FORMAT_R8G8_SINT: case VK_FORMAT_R8G8B8_SINT: case VK_FORMAT_R8G8B8A8_SINT:
+    case VK_FORMAT_B8G8R8A8_SINT: case VK_FORMAT_A2B10G10R10_SINT_PACK32: case VK_FORMAT_R16_SINT:
+    case VK_FORMAT_R16G16_SINT: case VK_FORMAT_R16G16B16A16_SINT: case VK_FORMAT_R32_SINT: case VK_FORMAT_R32G32_SINT:
+    case VK_FORMAT_R32G32B32_SINT: case VK_FORMAT_R32G32B32A32_SINT: case VK_FORMAT_A8B8G8R8_SINT_PACK32:
+    case VK_FORMAT_A2R10G10B10_SINT_PACK32: case VK_FORMAT_R16G16B16_SINT: case VK_FORMAT_B8G8R8_SINT:
+    case VK_FORMAT_R64_SINT: case VK_FORMAT_R64G64_SINT: case VK_FORMAT_R64G64B64_SINT: case VK_FORMAT_R64G64B64A64_SINT:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
 } // namespace
 
 void copy_b2t(VkCommandBuffer cmd, NvnState& st, const nvn_p_copy_bt& p, bool to_image) {
@@ -212,6 +234,7 @@ void copy_b2t(VkCommandBuffer cmd, NvnState& st, const nvn_p_copy_bt& p, bool to
     }
     Sub s;
     if (!resolve(p.tex, &p.view, p.has_view != 0, p.r, s)) return;
+    if (s.tex->rs != 1.0f) warn(11, "copy between a buffer and a shadow map made larger (Shadow resolution): its top-left corner");
     uint64_t size = 0;
     VkBufferImageCopy c{};
     BufferRef span;
@@ -255,6 +278,27 @@ void copy_t2t(VkCommandBuffer cmd, NvnState& st, const nvn_p_copy_tt& p) {
                  d.w, d.h, p.flags);
     }
     log_big_copy("texture", d.tex, d.level, d.layer, d.x, d.y, d.w, d.h, s.tex->gpu);
+    // a shadow map made larger (Shadow resolution, vk_texture.h Texture::rs): its side of the copy in the image's
+    // texels. Two such alike copy as they are; otherwise a blit scales, where the depth format can be blitted
+    const auto upscaled = [](Sub& x) {
+        if (x.tex->rs == 1.0f) return;
+        const int64_t x1 = shadow_res::edge((int64_t)x.x + x.w, x.tex->rs), y1 = shadow_res::edge((int64_t)x.y + x.h, x.tex->rs);
+        x.x = (int32_t)shadow_res::edge(x.x, x.tex->rs), x.y = (int32_t)shadow_res::edge(x.y, x.tex->rs);
+        x.w = (uint32_t)std::max<int64_t>(0, x1 - x.x), x.h = (uint32_t)std::max<int64_t>(0, y1 - x.y);
+    };
+    if (s.tex->rs != 1.0f || d.tex->rs != 1.0f) {
+        upscaled(s), upscaled(d);
+        if ((s.w != d.w || s.h != d.h) && !(s.tex->aspect & VK_IMAGE_ASPECT_COLOR_BIT)) {
+            VkFormatProperties fs{}, fd{};
+            vkGetPhysicalDeviceFormatProperties(dev.physical, s.tex->format, &fs);
+            vkGetPhysicalDeviceFormatProperties(dev.physical, d.tex->format, &fd);
+            if (!(fs.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+                !(fd.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT)) {
+                warn(12, "copy into or out of a shadow map made larger (Shadow resolution) the GPU cannot scale: skipped");
+                return;
+            }
+        }
+    }
     if (s.tex == d.tex && s.level == d.level && s.layer == d.layer) {
         warn(6, "texture copy within one subresource: skipped");
         return;
@@ -306,6 +350,21 @@ void copy_t2t(VkCommandBuffer cmd, NvnState& st, const nvn_p_copy_tt& p) {
         VkImageCopy cp{layers(s), offset(s), layers(d), offset(d), extent(s)};
         vkCmdCopyImage(cmd, s.tex->image, VK_IMAGE_LAYOUT_GENERAL, d.tex->image, VK_IMAGE_LAYOUT_GENERAL, 1, &cp);
     } else {   // scaled or converting: nearest, or linear when the game asked for it (colour only)
+        // (what Vulkan allows a blit: BLIT_SRC/BLIT_DST, one format class on both sides, the same format for depth or
+        // stencil, single-sampled images, and linear filtering only where the source format supports it; outside that
+        // the result is undefined, and some drivers write garbage or lose the device)
+        VkFormatProperties fs{}, fd{};
+        vkGetPhysicalDeviceFormatProperties(dev.physical, s.tex->format, &fs);
+        vkGetPhysicalDeviceFormatProperties(dev.physical, d.tex->format, &fd);
+        if (!(fs.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) ||
+            !(fd.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) ||
+            format_class(s.tex->format) != format_class(d.tex->format) ||
+            (!color && s.tex->format != d.tex->format) ||
+            s.tex->samples != VK_SAMPLE_COUNT_1_BIT || d.tex->samples != VK_SAMPLE_COUNT_1_BIT) {
+            warn(13, "texture blit the device cannot make: skipped");
+            full_barrier(cmd);
+            return;
+        }
         VkImageBlit bl{};
         bl.srcSubresource = layers(s);
         bl.dstSubresource = layers(d);
@@ -313,7 +372,9 @@ void copy_t2t(VkCommandBuffer cmd, NvnState& st, const nvn_p_copy_tt& p) {
         bl.srcOffsets[1] = {s.x + (int32_t)s.w, s.y + (int32_t)s.h, s.z + (int32_t)s.d};
         bl.dstOffsets[0] = offset(d);
         bl.dstOffsets[1] = {d.x + (int32_t)d.w, d.y + (int32_t)d.h, d.z + (int32_t)d.d};
-        const bool linear = ((p.flags & NVN_COPY_FLAGS_LINEAR_FILTER_BIT) || d.down > s.down) && color;
+        const bool linear = ((p.flags & NVN_COPY_FLAGS_LINEAR_FILTER_BIT) || d.down > s.down) && color &&
+                            (fs.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) &&
+                            format_class(s.tex->format) == 0;
         vkCmdBlitImage(cmd, s.tex->image, VK_IMAGE_LAYOUT_GENERAL, d.tex->image, VK_IMAGE_LAYOUT_GENERAL, 1, &bl,
                        linear ? VK_FILTER_LINEAR : VK_FILTER_NEAREST);
     }
@@ -324,8 +385,14 @@ void copy_t2t(VkCommandBuffer cmd, NvnState& st, const nvn_p_copy_tt& p) {
 void clear_tex(VkCommandBuffer cmd, NvnState& st, const nvn_p_clear_tex& p) {
     Sub s;
     if (!resolve(p.tex, &p.view, p.has_view != 0, p.r, s)) return;
-    const uint32_t lw = std::max(1u, s.tex->width >> s.level), lh = std::max(1u, s.tex->height >> s.level);
+    uint32_t lw = std::max(1u, s.tex->width >> s.level), lh = std::max(1u, s.tex->height >> s.level);
     const bool whole = !s.x && !s.y && s.w == lw && s.h == lh;
+    if (s.tex->rs != 1.0f && !whole) {   // (a shadow map made larger, Shadow resolution: the region in its image's texels)
+        const int64_t x1 = shadow_res::edge((int64_t)s.x + s.w, s.tex->rs), y1 = shadow_res::edge((int64_t)s.y + s.h, s.tex->rs);
+        s.x = (int32_t)shadow_res::edge(s.x, s.tex->rs), s.y = (int32_t)shadow_res::edge(s.y, s.tex->rs);
+        s.w = (uint32_t)std::max<int64_t>(0, x1 - s.x), s.h = (uint32_t)std::max<int64_t>(0, y1 - s.y);
+        lw = image_width(s.tex), lh = image_height(s.tex);
+    }
     if ((p.mask & 0xf) != 0xf && (s.tex->aspect & VK_IMAGE_ASPECT_COLOR_BIT)) warn(8, "texture clear with a channel mask: cleared whole");
     end_pass(cmd);
     GprofSpan gp(cmd, "xfer clear texture (with its barriers)");

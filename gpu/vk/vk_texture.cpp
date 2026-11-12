@@ -324,9 +324,13 @@ uint64_t compact_pct() {
     return pct;
 }
 uint64_t pool_cap() {   // (LaküenRecomp: 512 MB on a card of 8 GB or less, where render targets were otherwise made ~10 a frame)
-    static const uint64_t mb = getenv("RX_VK_TARGET_POOL_MB") ? (uint64_t)std::max(0, atoi(getenv("RX_VK_TARGET_POOL_MB")))
-                               : small_vram()                ? 512
-                                                             : 256;
+    // (upstream #2467: 128 MB where the driver allows 6.5 GB or less, which is a Steam Deck's 5.8 GB of shared RAM too)
+    static const uint64_t mb = []() -> uint64_t {
+        if (getenv("RX_VK_TARGET_POOL_MB")) return (uint64_t)std::max(0, atoi(getenv("RX_VK_TARGET_POOL_MB")));
+        if (small_vram()) return 512;
+        uint64_t used = 0, allowed = 0;
+        return (vram_usage(&used, &allowed) && allowed <= (6ull << 30) + (512ull << 20)) ? 128 : 256;
+    }();
     return mb << 20;
 }
 uint64_t pool_key_of(const VkImageCreateInfo& ci) {
@@ -490,6 +494,16 @@ Staging staging(uint64_t n, uint64_t align = 256) {
             a.value = rec_value, a.used = n;
             a.used_at = std::chrono::steady_clock::now();
             return {a.buffer, 0, a.mapped, a.allocation};
+        }
+    }
+    for (Arena& a : arenas) {
+        if (a.value < rec_value) {
+            const uint64_t at = (a.used + align - 1) & ~(align - 1);
+            if (at + n <= a.size) {
+                a.value = rec_value, a.used = at + n;
+                a.used_at = std::chrono::steady_clock::now();
+                return {a.buffer, at, a.mapped + at, a.allocation};
+            }
         }
     }
     Arena a;
@@ -1955,6 +1969,44 @@ bool low_vram_texture_mips() {
     return !disabled && small && opts.preset == 1;
 }
 
+// Shadow resolution: the sizes and formats of depth textures made larger that were then rendered with colour targets
+std::mutex shadow_res_mu;
+std::unordered_set<uint64_t> shadow_res_no;
+uint64_t shadow_res_key(uint32_t w, uint32_t h, int nvn_format) { return (uint64_t)w << 40 | (uint64_t)h << 16 | (uint32_t)nvn_format; }
+bool shadow_res_refused(uint32_t w, uint32_t h, int nvn_format) {
+    std::lock_guard lk(shadow_res_mu);
+    return shadow_res_no.count(shadow_res_key(w, h, nvn_format)) != 0;
+}
+}  // namespace
+/// (LaküenRecomp handheld) The shadow maps' scale: LAKUEN_SHADOW_SCALE=<0.25-4> over all; else on an AMD integrated GPU (Steam
+/// Deck, Legion Go S) with the Shadow resolution row at Game, 0.5: the sun's cascades 800 a side instead of 1600, the characters'
+/// 384 instead of 768, a quarter of their pixels to draw; else the row's (shadow_resolution_factor)
+float shadow_scale() {
+    static const float f = [] {
+        if (const char* e = getenv("LAKUEN_SHADOW_SCALE")) return std::clamp((float)atof(e), 0.25f, 4.0f);
+        const float row = shadow_resolution_factor();
+        if (row == 1.0f && dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            logf("vk: shadow maps at half size on this handheld (LAKUEN_SHADOW_SCALE=1: the game's; LAKUEN_SHADOWS=0: none drawn)");
+            return 0.5f;
+        }
+        return row;
+    }();
+    return f;
+}
+/// (LaküenRecomp handheld) LAKUEN_SHADOWS=0: the shadow maps' depth-only passes draw nothing (vk_draw.cpp), the maps keep their
+/// clear: no shadows, and their draws' CPU and GPU time saved
+bool shadows_off() {
+    static const bool v = getenv("LAKUEN_SHADOWS") && atoi(getenv("LAKUEN_SHADOWS")) == 0;
+    return v;
+}
+
+void shadow_res_refuse(const Texture* t) {
+    std::lock_guard lk(shadow_res_mu);
+    if (shadow_res_no.insert(shadow_res_key(t->width, t->height, t->nvn_format)).second)
+        logf("vk: shadow resolution: depth %ux%u (NVN %#x) rendered with colour targets: not a shadow map, kept at the game's size "
+             "when made again", t->width, t->height, t->nvn_format);
+}
+namespace {
 Texture* create(const Key& key, const nvn_tex* t, VkFormat vf, bool astc, int bw, int bh, int bpb, bool as_target) {
     PROF_EXACT();   // (texture_get's slow path: PROF_TEXGET samples the rest)
     auto tex = std::make_unique<Texture>();
@@ -2046,6 +2098,32 @@ Texture* create(const Key& key, const nvn_tex* t, VkFormat vf, bool astc, int bw
         return nullptr;
     }
     x.samples = d.samples > 1 ? (VkSampleCountFlagBits)d.samples : VK_SAMPLE_COUNT_1_BIT;
+    {   // Shadow resolution (the Insert menu's Graphics tab, as at the start): the shadow maps' images made larger
+        // than the game's, and the passes that render them scaled to match (vk_draw.cpp targets: the viewport, scissor and
+        // clears). OoT's shadow maps are square depth targets of one level: the characters' (768 and less) and the sun's
+        // cascades (1600 x 1600 x 3 in D16 docked). The game samples them by normalized coordinates, so it reads the finer
+        // map as it is. A size a multiple of 32 (not the scene's odd dynamic sizes); a size once seen rendered with colour
+        // targets is not a shadow map and stays the game's from then on (shadow_res_refuse, vk_draw.cpp targets)
+        // Each side 8192 at most, and the image 1 GB at most (shadow_res.h)
+        const float want = shadow_scale();
+        if (x.type == VK_IMAGE_TYPE_2D &&
+            shadow_res::qualifies(depth && (x.aspect & VK_IMAGE_ASPECT_DEPTH_BIT),
+                                  d.target == NVN_TEXTURE_TARGET_2D || d.target == NVN_TEXTURE_TARGET_2D_ARRAY,
+                                  (uint32_t)x.samples, x.levels, x.skip || x.sparse, x.width, x.height) &&
+            !shadow_res_refused(x.width, x.height, d.format))
+            x.shadow_map = true;
+        if (want != 1.0f && x.shadow_map) {
+            const uint32_t side = shadow_res::side(x.width, std::max(1u, x.layers), (uint32_t)std::max(2, bpb), want,
+                                                   std::min<uint32_t>(8192u, dev.props.limits.maxImageDimension2D));
+            if (side != x.width) {
+                x.rs = (float)side / (float)x.width;
+                static int told;
+                if (told++ < 16)
+                    logf("vk: shadow resolution: texture %#llx %ux%u x%u (NVN %#x) made %ux%u", (unsigned long long)t->gpu,
+                         x.width, x.height, x.layers, d.format, side, side);
+            }
+        }
+    }
     {   // (decoded ASTC as BC3: 2D, at most the scratch's size; from blocks of 6 x 6 texels up (2.25 bits a texel or
         // less: BC3's 8 keep what they have) from 2 MB as RGBA8 (RX_VK_ASTC_BC_MB), the finer ones (UI, characters)
         // only from 64 MB)
@@ -2167,7 +2245,7 @@ Texture* create(const Key& key, const nvn_tex* t, VkFormat vf, bool astc, int bw
     ci.flags = flags;
     ci.imageType = x.type;
     ci.format = x.format;
-    ci.extent = {x.width, x.height, x.depth};
+    ci.extent = {image_width(&x), image_height(&x), x.depth};   // (a shadow map's larger image, above)
     ci.mipLevels = x.levels;
     ci.arrayLayers = x.layers;
     ci.samples = x.samples;
@@ -2241,6 +2319,8 @@ Texture* create(const Key& key, const nvn_tex* t, VkFormat vf, bool astc, int bw
     uint64_t px = 0;
     for (uint32_t l = 0; l < x.levels; l++)
         px += texture_level_units(x.width >> l, x.height >> l, x.depth >> l, unit_w, unit_h);
+    // (a shadow map made larger, Shadow resolution: one level, its image's texels, not the game's; shadow_res.h)
+    if (x.rs != 1.0f) px = (uint64_t)image_width(&x) * image_height(&x) * std::max(1u, x.depth);
     const uint32_t texel = x.bc ? 16 : astc ? 4 : std::max(1, from ? (from == 3 ? 4 : from == 6 ? 8 : 16) : bpb);
     x.bytes = x.sparse ? 0 : px * x.layers * texel * x.samples;   // (a sparse image's: as its layers are bound)
     // (the budget counts what the allocator gave it: the texels' 8% short of that over a scene's 2000 textures, 3228 MB counted for 3504
@@ -2713,7 +2793,8 @@ Texture* texture_touch(Texture* tex, bool for_sampling) {
         if (tex->uploaded) {
             static int logged;
             static std::unordered_map<uint64_t, int> big;
-            if (logged++ < 20 || (tex->guest_size > (4u << 20) && big[tex->gpu]++ < 3)) {
+            static const bool log_big = env_on("RX_VK_LOG_PARTIAL");
+            if (logged++ < 20 || (log_big && tex->guest_size > (4u << 20) && big[tex->gpu]++ < 3)) {
                 uint64_t part = 0, nz = 0, readable = 0;
                 for (const auto& r : dirty) part += r.second - r.first;
                 if (partial) {   // (what the CPU wrote: how much of it is not zero, and in which levels)
@@ -4030,7 +4111,7 @@ void compact_step(uint64_t completed) {
             ci.flags = t->create_flags;
             ci.imageType = t->type;
             ci.format = t->format;
-            ci.extent = {t->width, t->height, t->depth};
+            ci.extent = {image_width(t), image_height(t), t->depth};   // (a shadow map made larger keeps its size: Shadow resolution)
             ci.mipLevels = t->levels;
             ci.arrayLayers = t->layers;
             ci.samples = t->samples;
@@ -4069,7 +4150,7 @@ void compact_step(uint64_t completed) {
         for (uint32_t l = 0; l < t->levels; l++) {
             VkImageCopy r{};
             r.srcSubresource = r.dstSubresource = {t->aspect, l, 0, t->layers};
-            r.extent = {std::max(1u, t->width >> l), std::max(1u, t->height >> l), std::max(1u, t->depth >> l)};
+            r.extent = {std::max(1u, image_width(t) >> l), std::max(1u, image_height(t) >> l), std::max(1u, t->depth >> l)};
             regions.push_back(r);
         }
         vkCmdCopyImage(cmd, t->image, VK_IMAGE_LAYOUT_GENERAL, image, VK_IMAGE_LAYOUT_GENERAL, (uint32_t)regions.size(), regions.data());
@@ -4152,6 +4233,10 @@ void texture_frame(uint64_t completed) {
         // all of Kokiri gameplay, which stages ~nothing. A scene change makes the ones it needs again. RX_VK_STAGING_KEEP_MB=256: as before)
         static const uint64_t keep = []() -> uint64_t {
             if (const char* e = getenv("RX_VK_STAGING_KEEP_MB")) return (uint64_t)atoi(e) << 20;
+            // (LaküenRecomp handheld) an AMD integrated GPU (Steam Deck, Legion Go S): 256 MB. Its arenas are system memory either
+            // way (no BAR VRAM to give back), and making one there cost 12-388 ms on a Steam Deck, 24 of them ~3 s, most in the
+            // scene changes after the idle ones had been freed (Kokiri Forest's entry froze for seconds)
+            if (dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) return 256ull << 20;
             uint64_t used = 0, allowed = 0;
             return (vram_usage(&used, &allowed) && allowed <= (6ull << 30) + (512ull << 20) ? 64ull : 256ull) << 20;
         }();
@@ -4160,7 +4245,9 @@ void texture_frame(uint64_t completed) {
             const bool idle = it->value <= completed && it->value != rec_value;
             // (and one nothing has staged into for 30 s: Kokiri Forest's gameplay stages next to nothing, and the 64 MB it kept are VRAM
             // behind the BAR. A load makes one again. RX_VK_STAGING_IDLE_S=<n>: that long, 0: kept)
-            static const int64_t idle_s = getenv("RX_VK_STAGING_IDLE_S") ? atoll(getenv("RX_VK_STAGING_IDLE_S")) : 30;
+            // (LaküenRecomp handheld: kept on an AMD integrated GPU, where an idle arena is plain system memory, not VRAM)
+            static const int64_t idle_s = getenv("RX_VK_STAGING_IDLE_S") ? atoll(getenv("RX_VK_STAGING_IDLE_S"))
+                : dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? 0 : 30;
             const bool stale = idle_s && std::chrono::steady_clock::now() - it->used_at > std::chrono::seconds(idle_s);
             if (idle && (it->size > kArena || kept + it->size > keep || stale)) {
                 destroy_buffer(it->buffer, it->allocation);
@@ -4234,7 +4321,7 @@ void texture_frame(uint64_t completed) {
     // may have (other programs use the GPU too). The least recently used go first, down to 7/8 of it; nothing the
     // last 8 presents used, nothing recorded work may still read.
     static uint64_t own = 0;
-    if (frame_no % 10) return;
+    if (frame_no % 10 && (!own || total_bytes <= own + (own >> 3))) return;
     uint64_t used = 0, allowed = 0, block_free = 0;
     const bool known = vram_usage(&used, &allowed, &block_free);
     if (!own)   // (RX_VK_VRAM_MB, else 70% of what the driver allows the process at the first look)
@@ -4290,7 +4377,9 @@ void texture_frame(uint64_t completed) {
             } else if (system_ram <= 12ull << 30) {
                 budget = std::min<uint64_t>(budget, 2048ull << 20);   // 2 GB
             } else if (system_ram <= 16ull << 30) {
-                budget = std::min<uint64_t>(budget, 2560ull << 20);   // 2.5 GB (previous default)
+                // (LaküenRecomp handheld: 2 GB, not 2.5. A Steam Deck's 16 GB hold the game's memory, the render targets and the
+                // system too: at 2.4 GB of textures RAM and swap filled in Kokiri Forest and play fell to 1-2 fps)
+                budget = std::min<uint64_t>(budget, 2048ull << 20);   // 2 GB
             } else if (system_ram <= 24ull << 30) {
                 budget = std::min<uint64_t>(budget, 3584ull << 20);   // 3.5 GB
             } else if (system_ram <= 32ull << 30) {
@@ -4388,6 +4477,40 @@ void texture_frame(uint64_t completed) {
         budget = std::min(budget, total_bytes > over ? total_bytes - over : 0);
         rule_budget = std::min(rule_budget, total_bytes > over ? total_bytes - over : 0);
     }
+    // (LaküenRecomp handheld) an integrated GPU's textures are the system's RAM: while the system has less than
+    // LAKUEN_RAM_FLOOR_MB (1536) available (MemAvailable, read every 60 frames), the textures give up what is short, the excess
+    // alone (rule_target). A Steam Deck with 2.4 GB of textures ran out of RAM and swap in Kokiri Forest and fell to 1-2 fps for
+    // good. LAKUEN_RAM_FLOOR_MB=0: off
+#if defined(__linux__)
+    if (dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        static const uint64_t floor_bytes = (uint64_t)(getenv("LAKUEN_RAM_FLOOR_MB") ? std::max(0, atoi(getenv("LAKUEN_RAM_FLOOR_MB")))
+                                                                                     : 1536) << 20;
+        static uint64_t avail = UINT64_MAX;
+        static uint64_t next_read = 0;
+        if (floor_bytes && frame_no >= next_read) {
+            next_read = frame_no + 60;
+            if (FILE* f = fopen("/proc/meminfo", "r")) {
+                char line[128];
+                unsigned long long kb = 0;
+                while (fgets(line, sizeof line, f))
+                    if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { avail = (uint64_t)kb << 10; break; }
+                fclose(f);
+            }
+        }
+        if (floor_bytes && avail < floor_bytes) {
+            const uint64_t short_by = floor_bytes - avail;
+            // (never under 1 GB of textures: freed images can stay as free space in VMA's blocks, the RAM not coming back,
+            // and the next pass would cut again; what is in view must stay)
+            const uint64_t to = std::max<uint64_t>(total_bytes > short_by ? total_bytes - short_by : 0, 1024ull << 20);
+            budget = std::min(budget, to);
+            rule_budget = std::min(rule_budget, to);
+            static int told;
+            if (told++ < 20)
+                logf("vk: RAM short (%llu MB available, under %llu): the textures go down by %llu MB",
+                     (unsigned long long)(avail >> 20), (unsigned long long)(floor_bytes >> 20), (unsigned long long)(short_by >> 20));
+        }
+    }
+#endif
     // (hookshot) the 90% rule and the driver's limit let go of their excess, not of an eighth of the cache: vram_compact.h.
     // RX_VK_EVICT_EXCESS=0: to 7/8 of their budget, as before
     static const bool excess_only = !getenv("RX_VK_EVICT_EXCESS") || atoi(getenv("RX_VK_EVICT_EXCESS")) != 0;
@@ -4560,8 +4683,12 @@ void texture_frame(uint64_t completed) {
     // after a while of play (issues 107 and 386). Kept, up to RX_VK_KEEP_FINALIZED_MB (512 by default; 0:
     // evicted as before), the least recently used beyond that going as before. (Not written back into the memory instead: the game
     // may have put other things there since, and a write-back over scene data once crashed it)
-    static const uint64_t keep_finalized_max =
-        (uint64_t)(getenv("RX_VK_KEEP_FINALIZED_MB") ? std::max(0, atoi(getenv("RX_VK_KEEP_FINALIZED_MB"))) : 512) << 20;
+    static const uint64_t keep_finalized_max = []() -> uint64_t {
+        if (const char* e = getenv("RX_VK_KEEP_FINALIZED_MB")) return (uint64_t)std::max(0, atoi(e)) << 20;
+        uint64_t u = 0, a = 0;
+        if (vram_usage(&u, &a) && a <= (6ull << 30) + (512ull << 20)) return 192ull << 20;
+        return 512ull << 20;
+    }();
     const auto keep_finalized = [&](const Texture* tex) {
         if (!keep_finalized_max || !tex->gpu_written || !tex->released || !tex->first_written ||
             tex->first_written != tex->last_written || tex->bytes > (4ull << 20))
@@ -4687,6 +4814,17 @@ void texture_frame(uint64_t completed) {
         evict.push_back({tex, !no_flush && !overwritten && tex->gpu_written && !tex->released && flushable(*tex), shifted, overwritten});
         pending_bytes += tex->bytes + tex->pad;
         if (by_hold && !overwritten) hold_live += tex->bytes + tex->pad;
+    }
+    if (!sweep && pending_bytes < total_bytes &&
+        (total_bytes - pending_bytes > budget + (budget >> 3) || (pool_pressed && total_bytes - pending_bytes > budget))) {
+        const uint64_t relief_to = evict_to ? evict_to : budget;
+        for (auto& [last, tex] : order) {
+            if (pending_bytes >= total_bytes || total_bytes - pending_bytes <= relief_to || frame_no - last < 8) break;
+            if (frame_no - last >= need_unused) continue;
+            if (tex->gpu_written || tex->last_value > completed) continue;
+            evict.push_back({tex, false, false, false});
+            pending_bytes += tex->bytes + tex->pad;
+        }
     }
     evict_reason::Tally tally;                     // (why each one goes: the retired line below)
     std::unordered_set<const Texture*> flushed_ok;   // (the write-backs that worked)
