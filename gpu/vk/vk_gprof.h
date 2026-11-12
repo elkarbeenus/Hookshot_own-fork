@@ -30,6 +30,14 @@ void gprof_collect(int slot);
 /// Every 120 presents (frames of them): every 600, the report
 void gprof_report(int frames);
 
+/// (LaküenRecomp) The Effect finder (effect_finder=1 in hookshot_options.ini, read at the start): pass timing at level 2, and the
+/// programs whose draws took the most GPU time kept, by rank, for the menu's Finder rows. The list is not changed while
+/// frozen (a program left out would drop out of it)
+bool finder_on();
+int finder_count();
+bool finder_entry(int i, uint64_t* key, double* ms, double* draws);
+void finder_freeze(bool frozen);
+
 /// A span of a scope: closed by the destructor with its label (items and bytes set while it is open)
 struct GprofSpan {
     VkCommandBuffer cmd;

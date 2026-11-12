@@ -40,6 +40,8 @@ struct Options {
                           // the start (vk_texture.cpp create, shadow_resolution_factor)
     int effect_1 = 1, effect_2 = 1, effect_3 = 1, effect_4 = 1;   // (LaküenRecomp) the Effect pass rows: 1 drawn, 0 left out
                           // (menu_effect_off, vk_draw.cpp: costly passes a Steam Deck's GPU timing found; live)
+    int finder = 0, finder_pick = 1, finder_draw = 1;   // (LaküenRecomp) the Effect finder: on (read at the start), the pass by
+                          // rank, drawn (1) or left out (0), live (vk_gprof.h finder_entry, menu_effect_off)
     int shader_prep = 0;  // (LaküenRecomp) Shader preparation: 0 all at the start (the precompile), 1 as the game asks; read once,
                           // from the file (vk_draw.cpp precompile_wanted, menu_file_int)
     int realtime = 1;     // game time follows the clock (host/nn_vi.c); 0: per frame (slower frames, slower game)

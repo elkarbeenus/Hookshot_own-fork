@@ -4270,6 +4270,22 @@ void texture_frame(uint64_t completed) {
                 logf("vk: memory: working set %llu MB (peak %llu), private %llu MB, staging %llu MB in %zu arenas",
                      (unsigned long long)(pm.WorkingSetSize >> 20), (unsigned long long)(pm.PeakWorkingSetSize >> 20),
                      (unsigned long long)(pm.PrivateUsage >> 20), (unsigned long long)(kept >> 20), arenas.size());
+#if defined(__linux__)
+            {   // (LaküenRecomp: the system's RAM and swap beside it, for the builder's report)
+                unsigned long long avail = 0, swap_total = 0, swap_free = 0, kb;
+                if (FILE* f = fopen("/proc/meminfo", "r")) {
+                    char line[128];
+                    while (fgets(line, sizeof line, f)) {
+                        if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) avail = kb;
+                        else if (sscanf(line, "SwapTotal: %llu kB", &kb) == 1) swap_total = kb;
+                        else if (sscanf(line, "SwapFree: %llu kB", &kb) == 1) swap_free = kb;
+                    }
+                    fclose(f);
+                    logf("lakuen-mem: %llu MB available, swap %llu of %llu MB used", avail >> 10, (swap_total - swap_free) >> 10,
+                         swap_total >> 10);
+                }
+            }
+#endif
 #if defined(__linux__) && defined(__GLIBC__)
             // (glibc's heap: what its arenas hold free. The shader translation and the loads' decoding leave their garbage spread through
             // the threads' arenas (26 of them, 1.2 GB resident in Kokiri Forest, the heap's growth in a scene change never going back),

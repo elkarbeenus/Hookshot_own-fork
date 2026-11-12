@@ -3,10 +3,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <mutex>
 #include <unordered_map>
 #include <vector>
 
 #include "vk_gprof.h"
+#include "vk_menu.h"   // (LaküenRecomp: menu_file_int, the Effect finder)
 #include "vk_work.h"   // (after the others: its timestamps go through RX_VK_RECORDER with the commands around them)
 
 namespace mkwvk {
@@ -61,18 +63,45 @@ uint32_t stamp(Stream& st, VkCommandBuffer cmd) {
 
 } // namespace
 
+namespace {
+struct FinderEntry {
+    uint64_t key;
+    double ms, draws;
+};
+std::mutex finder_mu;
+std::vector<FinderEntry> finder_list;
+bool finder_frozen = false;
+}  // namespace
+bool finder_on() {
+    static const bool on = menu_file_int("effect_finder", 0) == 1;
+    return on;
+}
+int finder_count() {
+    std::lock_guard lk(finder_mu);
+    return (int)finder_list.size();
+}
+bool finder_entry(int i, uint64_t* key, double* ms, double* draws) {
+    std::lock_guard lk(finder_mu);
+    if (i < 0 || i >= (int)finder_list.size()) return false;
+    *key = finder_list[i].key, *ms = finder_list[i].ms, *draws = finder_list[i].draws;
+    return true;
+}
+void finder_freeze(bool frozen) {
+    std::lock_guard lk(finder_mu);
+    finder_frozen = frozen;
+}
 bool gprof_on() {
     static const bool on = [] {
         const char* a = getenv("RX_VK_PASS_TIMING");
         const char* b = getenv("RX_VK_GPU_PROFILE");
-        return (a && atoi(a) != 0) || (b && atoi(b) != 0);
+        return (a && atoi(a) != 0) || (b && atoi(b) != 0) || finder_on();
     }();
     return on;
 }
 static int level() {
     static const int v = [] {
         const char* a = getenv("RX_VK_PASS_TIMING");
-        return a ? atoi(a) : 1;
+        return a ? atoi(a) : finder_on() ? 2 : 1;   // (LaküenRecomp: the Effect finder needs the programs' runs)
     }();
     return v;
 }
@@ -234,6 +263,26 @@ void gprof_report(int frames) {
         const Row& r = rows[i];
         logf("vk:   %c %7.3f ms  %6.1f x  %7.1f us  %8.1f items  %6.2f MB  %s", r.k ? 'u' : 'm', r.a.ns / f / 1e6, r.a.n / f,
              r.a.ns / std::max<int64_t>(r.a.n, 1) / 1e3, r.a.items / f, r.a.bytes / f / mb, r.name.c_str());
+    }
+    {   // (LaküenRecomp, the Effect finder: the ranking for the menu, kept while a program of it is left out)
+        std::lock_guard lk(finder_mu);
+        if (finder_on() && !finder_frozen && !progs.empty()) {
+            finder_list.clear();
+            for (size_t i = 0; i < progs.size() && finder_list.size() < 20; i++) {
+                const Row& r = progs[i];
+                unsigned long long key = 0;
+                if (sscanf(r.name.c_str(), "prog %llx", &key) != 1) continue;
+                finder_list.push_back({(uint64_t)key, r.a.ns / f / 1e6, r.a.items / f});
+            }
+            std::string line;
+            for (size_t i = 0; i < finder_list.size(); i++) {
+                char b[96];
+                snprintf(b, sizeof b, "%s#%zu %016llx %.2f ms %.0f draws", i ? "; " : "", i + 1,
+                         (unsigned long long)finder_list[i].key, finder_list[i].ms, finder_list[i].draws);
+                line += b;
+            }
+            logf("lakuen-finder: ranking: %s", line.c_str());
+        }
     }
     if (!progs.empty()) {
         logf("vk:   the 20 programs whose runs of draws took the most (RX_VK_PASS_TIMING=2: a timestamp at each change of program):");

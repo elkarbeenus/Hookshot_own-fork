@@ -16,6 +16,7 @@
 // Later keeps the saved settings for the next start and is not asked again until they change; Restart now saves and
 // closes the window as the player would, and the game starts again (WM_APP + 9: host/hos_relaunch.c).
 #include <atomic>
+#include <ctime>
 #include <chrono>
 #include <cmath>
 #include <utility>
@@ -29,6 +30,7 @@
 #include <vector>
 
 #include "vk_paths.h"
+#include "vk_gprof.h"   // (LaküenRecomp: the Effect finder's ranking)
 #include "vk_menu.h"
 #include "vk_menu_hit.h"
 #include "vk_fps.h"    // (the FPS counter's levels and numbers)
@@ -121,6 +123,15 @@ const char* tx_framegen(int v) {
     return t[v];
 }
 const char* tx_onoff(int v) { return v ? "On" : "Off"; }
+const char* tx_finder_pick(int v) {   // (LaküenRecomp: the Effect finder's pass, from the last GPU timing)
+    static char b[96];
+    uint64_t key = 0;
+    double ms = 0, draws = 0;
+    if (!finder_on()) snprintf(b, sizeof b, "#%d (finder off)", v);
+    else if (!finder_entry(v - 1, &key, &ms, &draws)) snprintf(b, sizeof b, "#%d (timing comes in ~10 s)", v);
+    else snprintf(b, sizeof b, "#%d  %.2f ms, %.0f draws  %08llx", v, ms, draws, (unsigned long long)(key >> 32));
+    return b;
+}
 const char* tx_shader_prep(int v) { return v ? "As needed" : "All at start"; }   // (LaküenRecomp)
 const char* tx_fps_level(int v) { return fps_stats::level_name(v); }
 const char* tx_fps_corner(int v) { return fps_stats::corner_name(v); }   // (the FPS counter row: Off, FPS, Frame time, Graph, Breakdown)
@@ -1209,6 +1220,14 @@ Row rows[] = {
      "A costly pass of the game's (a few full-screen draws). Off leaves it out at once: see what changes.", nullptr, false, true},
     {TAB_GRAPHICS, "Effect pass 4", &opts.effect_4, 0, 1, 1, tx_onoff,
      "A costly pass of the game's (a half-size picture). Off leaves it out at once: see what changes.", nullptr, false, true},
+    {TAB_GRAPHICS, "Effect finder", &opts.finder, 0, 1, 1, tx_onoff,
+     "Times the game's passes on the GPU and ranks them, for the two rows below: pick a pass, turn it off, see what is gone. "
+     "Each change goes into the log for the report. Costs a little GPU time; applies after a restart.", nullptr, true, true},
+    {TAB_GRAPHICS, "Finder pass", &opts.finder_pick, 1, 20, 1, tx_finder_pick,
+     "The pass by its GPU cost, most first (rank, GPU time a frame, draws a frame). The ranking holds while it is off.", nullptr,
+     false, true},
+    {TAB_GRAPHICS, "Finder pass drawn", &opts.finder_draw, 0, 1, 1, tx_onoff,
+     "Off leaves the pass picked above out at once.", nullptr, false, true},
     {TAB_GRAPHICS, "Shader preparation", &opts.shader_prep, 0, 1, 1, tx_shader_prep,
      "All at start: every shader this game folder has seen is made before the game, for no stutter, and kept in RAM. As needed: "
      "each one as the game asks, from the caches; far less RAM, now and then a short stutter. Applies after a restart.", nullptr,
@@ -4265,7 +4284,32 @@ float shadow_resolution_factor() {   // (the value the game started with: textur
     }();
     return f;
 }
-bool menu_effect_off(uint64_t key) {   // (LaküenRecomp: the Effect pass rows, live)
+bool menu_effect_off(uint64_t key) {   // (LaküenRecomp: the Effect pass rows and the Effect finder, live)
+    if (finder_on()) {
+        // (the pick: its key from the ranking, a change logged once with the time for the report)
+        static std::atomic<int> last{-1};
+        const int sig = opts.finder_pick * 2 + (opts.finder_draw ? 1 : 0);
+        static std::atomic<uint64_t> picked{0};
+        if (last.exchange(sig) != sig) {
+            uint64_t k = 0;
+            double ms = 0, draws = 0;
+            const bool have = finder_entry(opts.finder_pick - 1, &k, &ms, &draws);
+            picked = have ? k : 0;
+            finder_freeze(!opts.finder_draw);
+            const time_t now = time(nullptr);
+            tm t{};
+#ifdef _WIN32
+            localtime_s(&t, &now);
+#else
+            localtime_r(&now, &t);
+#endif
+            char when[16];
+            strftime(when, sizeof when, "%H:%M:%S", &t);
+            logf("lakuen-finder: %s #%d %016llx (%.2f ms, %.0f draws) %s", when, opts.finder_pick, (unsigned long long)k, ms, draws,
+                 opts.finder_draw ? "drawn" : "LEFT OUT");
+        }
+        if (!opts.finder_draw && key && key == picked.load(std::memory_order_relaxed)) return true;
+    }
     switch (key) {
     case 0xe40dc98fca54ad01ULL: return !opts.effect_1;
     case 0x701ae221d88b2908ULL: return !opts.effect_2;

@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(ROOT, "nx2"))
 sys.path.insert(0, os.path.join(ROOT, "third_party", "a64-kit", "tools"))
 import linux_update  # noqa: E402  (the release check and the part download)
 import lakuen_profiles  # noqa: E402  (LaküenRecomp: the device profiles, PC / Steam Deck / Legion Go S)
+import lakuen_report  # noqa: E402  (LaküenRecomp: the report a player sends in)
 import make_game  # noqa: E402  (LANGUAGES, BUILD_ID)
 import pipeline_share  # noqa: E402  (Save my pipeline list: the zip for the "Submit your pipelines" issue)
 import toolchain  # noqa: E402  (default_jobs: RX_JOBS)
@@ -1204,9 +1205,28 @@ class Builder(tk.Tk):
         self.profile_text = tk.StringVar(value="")
         ttk.Button(f, textvariable=self.profile_text, style="Link.TButton", cursor="hand2",
                    command=lambda: self.profile_dialog(folder)).pack(pady=(px(4), 0))
+        ttk.Button(f, text="Create a report to send in", style="Link.TButton", cursor="hand2",
+                   command=lambda: self.make_report(folder)).pack(pady=(px(4), 0))
         self.refresh_profile(folder)
         self.after(300, lambda: self.offer_profile_now(folder))
         self.lookup_latest()
+
+    def make_report(self, folder):   # (LaküenRecomp: one zip with a summary, the game's log and its settings)
+        try:
+            game, _kept = linux_update.game_version(folder)
+        except Exception:
+            game = None
+        try:
+            path = lakuen_report.create(folder, version=game)
+        except (ValueError, OSError) as e:
+            messagebox.showerror(APP_NAME, str(e), parent=self)
+            return
+        messagebox.showinfo(APP_NAME, "The report is ready:\n%s\n\nIt holds a summary, the game's last log and its settings "
+                            "files, nothing else. Send that one file." % path, parent=self)
+        try:
+            subprocess.Popen(["xdg-open", os.path.dirname(path)])
+        except OSError:
+            pass
 
     def refresh_profile(self, folder):   # (LaküenRecomp)
         line = lakuen_profiles.status(folder)
