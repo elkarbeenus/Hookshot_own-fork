@@ -1978,14 +1978,15 @@ bool shadow_res_refused(uint32_t w, uint32_t h, int nvn_format) {
     return shadow_res_no.count(shadow_res_key(w, h, nvn_format)) != 0;
 }
 }  // namespace
-/// (LaküenRecomp handheld) The shadow maps' scale: LAKUEN_SHADOW_SCALE=<0.25-4> over all; else on an AMD integrated GPU (Steam
+/// (LaküenRecomp handheld) The shadow maps' scale: LAKUEN_SHADOW_SCALE=<0.25-4> over all; else the Shadow quality row's; at Game, on an AMD integrated GPU (Steam
 /// Deck, Legion Go S) with the Shadow resolution row at Game, 0.5: the sun's cascades 800 a side instead of 1600, the characters'
 /// 384 instead of 768, a quarter of their pixels to draw; else the row's (shadow_resolution_factor)
 float shadow_scale() {
     static const float f = [] {
         if (const char* e = getenv("LAKUEN_SHADOW_SCALE")) return std::clamp((float)atof(e), 0.25f, 4.0f);
         const float row = shadow_resolution_factor();
-        if (row == 1.0f && dev.props.vendorID == 0x1002 && dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        if (row == 1.0f && !menu_shadows_off() && dev.props.vendorID == 0x1002 &&
+            dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
             logf("vk: shadow maps at half size on this handheld (LAKUEN_SHADOW_SCALE=1: the game's; LAKUEN_SHADOWS=0: none drawn)");
             return 0.5f;
         }
@@ -1996,7 +1997,7 @@ float shadow_scale() {
 /// (LaküenRecomp handheld) LAKUEN_SHADOWS=0: the shadow maps' depth-only passes draw nothing (vk_draw.cpp), the maps keep their
 /// clear: no shadows, and their draws' CPU and GPU time saved
 bool shadows_off() {
-    static const bool v = getenv("LAKUEN_SHADOWS") && atoi(getenv("LAKUEN_SHADOWS")) == 0;
+    static const bool v = getenv("LAKUEN_SHADOWS") ? atoi(getenv("LAKUEN_SHADOWS")) == 0 : menu_shadows_off();   // (or the row at Off)
     return v;
 }
 
