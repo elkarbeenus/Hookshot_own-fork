@@ -116,7 +116,11 @@ int hos_ini_option(const char *key, int otherwise) {   /* (hookshot: the Insert 
 }
 static int handheld(void) {
     static int v = -1;
-    if (v < 0) v = getenv("HOS_HANDHELD") ? atoi(getenv("HOS_HANDHELD")) != 0 : ini_option("handheld_profile", 0) != 0;
+    if (v < 0) {
+        v = getenv("HOS_HANDHELD") ? atoi(getenv("HOS_HANDHELD")) != 0 : ini_option("handheld_profile", 0) != 0;
+        /* (LaküenRecomp) which profile the game starts with, and from where: a handheld test kept Docked unseen */
+        hos_log("oe: profile %s (%s)", v ? "Handheld" : "Docked", getenv("HOS_HANDHELD") ? "HOS_HANDHELD" : "hookshot_options.ini");
+    }
     return v;
 }
 /* (hookshot) The Insert menu's Output resolution (output_res=, HOS_OUTPUT_RES over it), docked only: a size, "<width>x<height>",

@@ -4277,7 +4277,9 @@ void texture_frame(uint64_t completed) {
             } else if (system_ram <= 12ull << 30) {
                 budget = std::min<uint64_t>(budget, 2048ull << 20);   // 2 GB
             } else if (system_ram <= 16ull << 30) {
-                budget = std::min<uint64_t>(budget, 2560ull << 20);   // 2.5 GB (previous default)
+                // (LaküenRecomp handheld: 2 GB, not 2.5. A Steam Deck's 16 GB hold the game's memory, the render targets and the
+                // system too: at 2.4 GB of textures RAM and swap filled in Kokiri Forest and play fell to 1-2 fps)
+                budget = std::min<uint64_t>(budget, 2048ull << 20);   // 2 GB
             } else if (system_ram <= 24ull << 30) {
                 budget = std::min<uint64_t>(budget, 3584ull << 20);   // 3.5 GB
             } else if (system_ram <= 32ull << 30) {
@@ -4367,6 +4369,40 @@ void texture_frame(uint64_t completed) {
         budget = std::min(budget, total_bytes > over ? total_bytes - over : 0);
         rule_budget = std::min(rule_budget, total_bytes > over ? total_bytes - over : 0);
     }
+    // (LaküenRecomp handheld) an integrated GPU's textures are the system's RAM: while the system has less than
+    // LAKUEN_RAM_FLOOR_MB (1536) available (MemAvailable, read every 60 frames), the textures give up what is short, the excess
+    // alone (rule_target). A Steam Deck with 2.4 GB of textures ran out of RAM and swap in Kokiri Forest and fell to 1-2 fps for
+    // good. LAKUEN_RAM_FLOOR_MB=0: off
+#if defined(__linux__)
+    if (dev.props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        static const uint64_t floor_bytes = (uint64_t)(getenv("LAKUEN_RAM_FLOOR_MB") ? std::max(0, atoi(getenv("LAKUEN_RAM_FLOOR_MB")))
+                                                                                     : 1536) << 20;
+        static uint64_t avail = UINT64_MAX;
+        static uint64_t next_read = 0;
+        if (floor_bytes && frame_no >= next_read) {
+            next_read = frame_no + 60;
+            if (FILE* f = fopen("/proc/meminfo", "r")) {
+                char line[128];
+                unsigned long long kb = 0;
+                while (fgets(line, sizeof line, f))
+                    if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { avail = (uint64_t)kb << 10; break; }
+                fclose(f);
+            }
+        }
+        if (floor_bytes && avail < floor_bytes) {
+            const uint64_t short_by = floor_bytes - avail;
+            // (never under 1 GB of textures: freed images can stay as free space in VMA's blocks, the RAM not coming back,
+            // and the next pass would cut again; what is in view must stay)
+            const uint64_t to = std::max<uint64_t>(total_bytes > short_by ? total_bytes - short_by : 0, 1024ull << 20);
+            budget = std::min(budget, to);
+            rule_budget = std::min(rule_budget, to);
+            static int told;
+            if (told++ < 20)
+                logf("vk: RAM short (%llu MB available, under %llu): the textures go down by %llu MB",
+                     (unsigned long long)(avail >> 20), (unsigned long long)(floor_bytes >> 20), (unsigned long long)(short_by >> 20));
+        }
+    }
+#endif
     const uint64_t rule_to = vram_compact::rule_target(total_bytes, rule_budget);
     // (hookshot, RX_VK_COMPACT: the driver's limit asks for more than the reserve does: a pass over the budget, to 7/8 of it, as
     // before. Rare once the reserve is set: its line is 17 points under the limit's and counts the textures' free space out, so

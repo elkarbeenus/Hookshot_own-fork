@@ -3749,14 +3749,26 @@ static int handheld_resolution_for(const char* name) {
 /// game reads the profile at its start, so it applies from the next one. A marker file keeps it to once.
 /// LAKUEN_HANDHELD_PROFILE=0: off
 static void handheld_profile_once(const VkPhysicalDeviceProperties& props) {
-    if (!env_int("LAKUEN_HANDHELD_PROFILE", 1) || env_holds(&opts.handheld) || opts.handheld != 0) return;
-    const std::string marker = ini_path() + ".handheld_profile";
+    if (!env_int("LAKUEN_HANDHELD_PROFILE", 1) || env_holds(&opts.handheld) || getenv("HOS_HANDHELD")) return;
+    // (by the file, as host/nn_applet.c reads it at the game's start: the last handheld_profile= line, none = Docked. A Steam
+    // Deck test kept Docked (2304x1440) with no line logged here: the menu's own value had said Handheld)
+    int in_file = 0;
+    if (FILE* f = fopen(ini_path().c_str(), "r")) {
+        char line[128];
+        while (fgets(line, sizeof line, f))
+            if (!strncmp(line, "handheld_profile=", 17)) in_file = atoi(line + 17);
+        fclose(f);
+    }
+    if (in_file) return;
+    const std::string marker = ini_path() + ".handheld_profile2";
     if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    const int before = opts.handheld;
     opts.handheld = 1;
     save();
     if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
-    logf("vk: %s: Profile set once to Handheld (the game's 1536x864 picture, not 2304x1440 for a handheld screen), from the "
-         "next start (LAKUEN_HANDHELD_PROFILE=0: leave the options)", props.deviceName);
+    logf("vk: %s: Profile set once to Handheld (the game's 1536x864 picture, not 2304x1440 for a handheld screen; the file said "
+         "Docked, the menu %s), from the next start (LAKUEN_HANDHELD_PROFILE=0: leave the options)", props.deviceName,
+         before ? "Handheld" : "Docked");
 }
 
 static void handheld_resolution_once(const VkPhysicalDeviceProperties& props) {
