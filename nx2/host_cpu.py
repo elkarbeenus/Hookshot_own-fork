@@ -34,6 +34,9 @@ def host_mtune():
                 info = f.read()
             if "Custom APU 0405" in info or "Custom APU 0932" in info:
                 return "znver2"
+            # (this fork) Legion Go S and other Ryzen Z2 Go handhelds: Zen 3+ cores
+            if "Ryzen Z2 Go" in info:
+                return "znver3"
         except Exception:
             pass
     return ""
