@@ -18,8 +18,8 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 |---|---|
 | Upstream | [NotRexed/Hookshot](https://github.com/NotRexed/Hookshot), `main` |
 | Forked at | [`49f75dc`](https://github.com/NotRexed/Hookshot/commit/49f75dc82fb604643390ac7f95b1f5251b3ba09e) (2026-11-11) |
-| Last synced with upstream | [`ee29dd5`](https://github.com/NotRexed/Hookshot/commit/ee29dd55b593577ae0a7a6e2f871848ee5e176b4) (2026-11-12, merged into the fork branch) |
-| Fork branch | `handheld-rdna2` |
+| Last synced with upstream | [`9b6072cd`](https://github.com/NotRexed/Hookshot/commit/9b6072cd) (2026-11-12, merged into the fork branch) |
+| Fork branch | `handheld-rdna2` (one branch and one build for every device) |
 | License | GPL-3.0-or-later, as upstream ([LICENSE](LICENSE)) |
 | Output | A Linux AppImage (`LakuenRecomp-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
 
@@ -30,6 +30,20 @@ game on your own PC from your own copy.
 
 Each change is a small, separate commit on top of upstream, so it can be read, reverted or sent upstream on its own.
 New behaviour can be switched off with an environment variable (put it in `hookshot_env.txt` in the game folder).
+
+**One build for the PC, the Steam Deck and the Legion Go S**
+
+- **Device profiles.** The builder recognises the device (the firmware's product name, else the CPU's) and offers its
+  recommended settings once: Steam Deck, Legion Go S, or a PC with a graphics card of 8 GB or less. Yes applies them,
+  No keeps the player's own; either way it is not asked again until the profile changes. **Device profile** on the
+  launcher's page applies any of the three, or puts the settings from before back (`hookshot_options.ini.before-profile`,
+  `hookshot_env.txt.before-profile`). A profile is a small file, `builder/linux/profiles/<device>.ini`: menu options and
+  switches, with a version that brings the question back when it goes up. Started from Steam (`--play`), the question
+  comes before the game. (`builder/linux/lakuen_profiles.py`, `builder/linux/hookshot_builder.py`)
+- Everything else decides by the device at each start, so the handheld and PC changes below never reach each other.
+  Settings kept from an older version get a one-time fix per device (each with a marker file beside
+  `hookshot_options.ini`, so a player's later choice stays).
+- `hookshot_env.txt` takes this fork's `LAKUEN_` switches too. (`host/hos_main.c`)
 
 **Graphics (RDNA2 on RADV)**
 
@@ -44,8 +58,24 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   target pool is 512 MB, keeping 128 MB while VRAM is short instead of none (targets were otherwise made ~10 a frame).
   On the same route: 7-27 fps before, 30-60 fps after. `RX_VK_COMPACT`, `RX_VK_COMPACT_PCT` and `RX_VK_TARGET_POOL_MB`
   decide. The handhelds' integrated GPUs keep the compaction off. (`gpu/vk/vk_texture.cpp`)
+- On such cards, Output 1920x1080 and a fixed 75 % render share, once, where the options say the game's output and Auto:
+  at 2560x1440 the render targets left the textures 1.3-1.6 GB against ~2 GB used. `LAKUEN_SMALL_VRAM_OUTPUT=0`,
+  `LAKUEN_SMALL_VRAM_RES=0` leave them. The render target pool stays whole while VRAM is short
+  (`RX_VK_TARGET_POOL_PRESSED_MB=128`: as before). (`gpu/vk/vk_menu.cpp`, `gpu/vk/vk_texture.cpp`)
 
 **Handhelds (AMD integrated GPUs)**
+
+- The game's Handheld profile (its 1536x864 picture and lighter settings) once where the options file says Docked: a
+  Steam Deck drew 2304x1440 for its 1280x800 screen. `LAKUEN_HANDHELD_PROFILE=0` leaves it. A fixed render share (Steam
+  Deck 50 %, Legion Go S 67 %) where the options say Auto. `LAKUEN_HANDHELD_RES=0` leaves it. (`gpu/vk/vk_menu.cpp`)
+- RAM: textures at most 2 GB on 16 GB of shared memory, and while less than 1.5 GB of RAM is available the textures give up
+  what is short (never below 1 GB): a Steam Deck had filled RAM and swap and fallen to 1-2 fps.
+  `LAKUEN_RAM_FLOOR_MB=<MB>` (0: off). 256 MB of upload memory stays made, where making it again took up to 388 ms in an
+  area change. (`gpu/vk/vk_texture.cpp`)
+- Shadow maps at half size (a quarter of their pixels). `LAKUEN_SHADOW_SCALE=<0.25-4>` sets the size (1: the game's);
+  `LAKUEN_SHADOWS=0` draws none. (`gpu/vk/shadow_res.h`, `gpu/vk/vk_draw.cpp`)
+- The game's code is tuned for the Legion Go S's Zen 3+ cores, as for the Deck's Zen 2. (`nx2/host_cpu.py`)
+- The game reports which profile it starts with (`oe: profile ...` in the log). (`host/nn_applet.c`)
 
 - The first start uses the menu's Handheld settings with frame generation off (`RX_VK_AUTO_HANDHELD=0` keeps the docked
   defaults): a Steam Deck runs the game short of CPU, where made frames only take GPU work out of the same power budget.
@@ -122,7 +152,7 @@ The in-game menu opens with <kbd>F1</kbd> or <kbd>Insert</kbd>, or on a controll
 
 # Upstream documentation (NotRexed/Hookshot)
 
-Everything below is upstream's README, unchanged, so the links and option tables keep matching the code. Where it says
+Everything below is upstream's README, with the game's and its places' names left out, so the links and option tables keep matching the code. Where it says
 "Hookshot", it means the upstream project; release links and the Discord are upstream's.
 
 <p align="center">
@@ -160,20 +190,20 @@ Discord: https://discord.gg/rexed
 
 ## Project status
 
-Experimental. Players have reported on many PCs, from Kokiri Forest to the dungeons: the table says what works and
+Experimental. Players have reported on many PCs, from the first area to the dungeons: the table says what works and
 what does not yet. Open problems are collected in tracking issues, linked below.
 
 | What | Status |
 |---|---|
-| Kokiri Forest: reaching gameplay and walking around | ✅ Works |
+| The first area: reaching gameplay and walking around | ✅ Works |
 | Sound, controller, keyboard and saves | ✅ Works |
 | In-game menu, frame generation and upscaling | ✅ Works |
 | Flicker (the picture flashing too bright while moving) | ✅ Fixed in v2.0.2 ([#645](https://github.com/NotRexed/Hookshot/pull/645)) |
 | Ground fog vanishing when looking down | ✅ Fixed in v2.0.2 ([#638](https://github.com/NotRexed/Hookshot/pull/638)) |
 | Models with missing pieces (doors, fences, parts of trees) | ✅ Fixed where tested, more play needed |
 | Stutter when entering new areas | ⚠️ Still happens the first time you visit a place. The next visits are smooth |
-| Performance | ⚠️ Depends on the PC: some reach a steady 60 fps, others stay below it, more so in Hyrule Field |
-| Hyrule Field, Castle Town, Kakariko and the dungeons | ⚠️ Players got there, with open bugs: lighting and shadows ([#1004](https://github.com/NotRexed/Hookshot/issues/1004)), crashes and freezes ([#2507](https://github.com/NotRexed/Hookshot/issues/2507)) |
+| Performance | ⚠️ Depends on the PC: some reach a steady 60 fps, others stay below it, more so in the large open field |
+| The open field, the towns and the dungeons | ⚠️ Players got there, with open bugs: lighting and shadows ([#1004](https://github.com/NotRexed/Hookshot/issues/1004)), crashes and freezes ([#2507](https://github.com/NotRexed/Hookshot/issues/2507)) |
 | Ultrawide and 4:3 | ✅ Works. The Aspect ratio row's default, Monitor's shape, widens the 3D to the screen and keeps the HUD and movies in the middle 16:9 ([#2119](https://github.com/NotRexed/Hookshot/pull/2119)) |
 | NVIDIA cards | ✅ Works. The most tested |
 | AMD cards | ⚠️ Many tested: reports from the RX 6600, RX 6800 XT, RX 7800 XT, RX 7900 XTX and RX 9070 XT. On Windows, the RX 6000 cards (Navi 21 and 22) draw task and mesh shaders through the compute fallback by default, as the driver lost the GPU with them ([#1747](https://github.com/NotRexed/Hookshot/pull/1747), [#1992](https://github.com/NotRexed/Hookshot/pull/1992), [#2215](https://github.com/NotRexed/Hookshot/pull/2215)). Driver crashes and device lost are still reported ([#996](https://github.com/NotRexed/Hookshot/issues/996)) |
@@ -337,7 +367,7 @@ the network or with other programs:
 - **Your Discord status, through the Discord app on this PC.** While Discord runs, the game shows "Playing Hookshot" with
   the time played. It does this the way every game does: through the Discord app's own local connection, a named pipe on
   Windows and the socket `discord-ipc-0` in `$XDG_RUNTIME_DIR` (or `$TMPDIR`, or `/tmp`) on Linux. What it sends is
-  "Ocarina of Time", the Hookshot version, the start time and the icon's name. The Discord app then shows it through
+  the game's name, the Hookshot version, the start time and the icon's name. The Discord app then shows it through
   Discord's servers. Turn it off with **Gameplay → Discord status** in the Insert menu.
 - **Files it writes outside the game folder:** the builder's own folder (above), its settings (`~/.config/hookshot` on
   Linux), the saves (above), and shortcuts if you ask for them. **Bug report** (Gameplay tab) only writes a folder in
@@ -361,7 +391,7 @@ lists its files' checksums in `SHA256SUMS`. A copy from anywhere else may not be
 | Parts of the picture are missing, or a message says your card has no mesh shader support | The card or its driver has no mesh shaders. Update the driver; older cards are not supported ([#640](https://github.com/NotRexed/Hookshot/issues/640)) |
 | AMD: blocky textures, solid rectangles in the sky or unusually dark courtyard surfaces | Try the [RGBA8 texture workaround](#amd-texture-workaround). It uses more graphics memory |
 | Linux: the game does not start or the picture is broken | The game needs a Vulkan 1.3 driver with mesh shaders. Check with `vulkaninfo \| grep mesh`: it should list `VK_EXT_mesh_shader`. Update Mesa or the NVIDIA driver |
-| Steam Deck: the game freezes and closes in Kokiri Forest or the Great Deku Tree (`gfx_0.0.0 timeout` in `journalctl -k`) | `RX_VK_MESH_NOCULL=2c56dc1006942f74` in `hookshot_env.txt` gets past it with every model drawn (the culling pass that runs for seconds is turned off). `RX_VK_SKIP_CODE=2c56dc1006942f74` also gets past it, but the models those draws make go missing (see the [development guide](docs/development.md#switches-for-testing-and-debugging), [#817](https://github.com/NotRexed/Hookshot/issues/817)) |
+| Steam Deck: the game freezes and closes in the first area or the first dungeon (`gfx_0.0.0 timeout` in `journalctl -k`) | `RX_VK_MESH_NOCULL=2c56dc1006942f74` in `hookshot_env.txt` gets past it with every model drawn (the culling pass that runs for seconds is turned off). `RX_VK_SKIP_CODE=2c56dc1006942f74` also gets past it, but the models those draws make go missing (see the [development guide](docs/development.md#switches-for-testing-and-debugging), [#817](https://github.com/NotRexed/Hookshot/issues/817)) |
 | "Your antivirus removed part of the build tools" | A false alarm on unsigned programs. Restore the files from Windows Security's Protection history, or add `%LOCALAPPDATA%\HookshotBuilder` to its exclusions, then press **Repair** |
 | Stutter the first time you see something | Normal for now: shaders are being prepared. It gets better when you pass through the same place again. You can help remove it for everyone: [send your pipeline list](#send-your-pipeline-list) |
 | Windows, NVIDIA: stutter every start in places you have seen, after the shaders were prepared | The driver's shader cache is too small to keep them all (the first start builds about 2 GB of pipelines into it). In the NVIDIA Control Panel, Manage 3D settings, set **Shader Cache Size** to **Unlimited** (or 10 GB). On Linux the game raises the driver's limit itself |
@@ -928,8 +958,8 @@ license. Never share a game folder built with them, and do not post builds made 
   run the build with `HOOKSHOT_NGX_SDK=<sdk folder>` set: `make_game.py` puts both runtimes in the game folder's `ngx`
   folder. NGX's core comes with NVIDIA's Linux driver.
 - **Linux, a game folder with other than plain English letters in its path:** NVIDIA's NGX on Linux loads DLSS's
-  runtimes only from a folder whose whole path is ASCII. A game in `~/Games/Zelda` needs nothing more. A game in a
-  folder such as `~/Games/Zelda-Café` (the `é` is not ASCII) cannot use the runtimes in its own `ngx` folder, and the
+  runtimes only from a folder whose whole path is ASCII. A game in `~/Games/MyGame` needs nothing more. A game in a
+  folder such as `~/Games/MyGame-Café` (the `é` is not ASCII) cannot use the runtimes in its own `ngx` folder, and the
   log and the Insert menu say so: copy `libnvidia-ngx-dlss.so.*` and `libnvidia-ngx-dlssg.so.*` from there into
   `$XDG_DATA_HOME/hookshot/ngx`
   (`~/.local/share/hookshot/ngx`), which the game also looks in, or into any other folder with an ASCII path and name
@@ -1051,7 +1081,7 @@ movie networks.
 
 `RX_VK_SKIP_CODE=<prefix,...>` leaves out the draws of every program with a stage whose native code key starts with one
 of the prefixes (the keys the log prints after "its code:"). On a Steam Deck, `RX_VK_SKIP_CODE=2c56dc1006942f74`
-avoids a GPU hang in Kokiri Forest and the Great Deku Tree: the GPU runs for seconds in the programs that share that
+avoids a GPU hang in the first area and the first dungeon: the GPU runs for seconds in the programs that share that
 task shader (a culling pass) until the kernel resets it ([#817](https://github.com/NotRexed/Hookshot/issues/817)).
 It is a workaround, not a fix: those are task + mesh programs, so the geometry they draw goes with them, and key models
 are missing while it is set. Off unless set.
@@ -1060,9 +1090,9 @@ The switches for scripted test runs, screenshots, frame dumps and profiles are i
 [development guide](docs/development.md#switches-for-testing-and-debugging).
 
 `RX_VK_WB_MAX_KB=<KB>` (off by default; 1024 is the tested value) is the size from which a written GPU binding may go
-without most of its write-back. OoT
+without most of its write-back. The game
 writes tens of MB of culling lists and per-frame buffers through the GPU that the CPU never reads, and copying them back
-sat on every submit's memory sync: in Hyrule Field on a 10 GB RTX 3080, about 66 MB and 4.4 ms a submit, holding the
+sat on every submit's memory sync: in the open field on a 10 GB RTX 3080, about 66 MB and 4.4 ms a submit, holding the
 scene at 45-48 fps. The CPU does read and write parts of some large ones, so a binding over the size is written back
 whole for the first `RX_VK_WB_PROBATION` submissions that write it (default 8), and after that only the ranges the CPU
 read or wrote meanwhile, and its first and last page when it shares them, are written back (`gpu/vk/wb_learn.h`). The
@@ -1130,7 +1160,7 @@ Hookshot exists thanks to the work of many people:
 - **[Eden](https://git.eden-emu.dev/eden-emu/eden)** and **Eglantine**: the shader recompiler and Switch 2 shader work.
 - **suyu**: the graphics decoders and the AArch64 translator.
 - **[seedds/nxnative](https://github.com/seedds/nxnative)**: reference for how task and mesh shaders work.
-- **[EvilBoyce / evilmfkr](https://github.com/evilmfkr/Hookshot)** (EvilOOT): the GPU culling that brings back Kokiri's foliage
+- **[EvilBoyce / evilmfkr](https://github.com/evilmfkr/Hookshot)** the GPU culling that brings back the first area's foliage
   (trees, ferns, grass, falling leaves, fireflies), the ambient light probes, the pond's water, the game's own fog, the freeze
   after Load (Horizon's mutex handoff) and the exposure flicker fix.
 - **[zortos293/Lichii](https://github.com/zortos293/Lichii)**: reference for Ampere shader lowering, and its compare-exchange retry fix.
@@ -1144,7 +1174,7 @@ Hookshot exists thanks to the work of many people:
 - **[kinnay/zbic](https://github.com/kinnay/zbic)**, **Opus** and **SDL**: decompression, audio and controllers.
 - **[sostenesfreitas/ocarina-recomp](https://github.com/sostenesfreitas/ocarina-recomp)**: this README's layout, and its notes
   confirmed the mesh stage's control section.
-- **[MythosOfs/Orchid](https://github.com/MythosOfs/Orchid)**: the fog and exposure workaround Ocarina of Time used before
+- **[MythosOfs/Orchid](https://github.com/MythosOfs/Orchid)**: the fog and exposure workaround the game used before
   its fog and lighting were fixed.
 - **Mesa (NAK)**: the reference for Ampere's instruction encoding.
 - Everyone who sent fixes: SkippySteve (Linux and the AppImage, and many more), monsterlag, klimovich008, hckrman101 (NVIDIA
@@ -1159,5 +1189,4 @@ It includes code from Eden and suyu, which are under the GPL too. Third-party pa
 work with the GPL (Sirit, the Vulkan Memory Allocator, SDL, Opus, Dear ImGui, zstd, the Libertinus fonts, zbic and the
 a64-kit tools) keep their own notices in their folders.
 
-Hookshot is an unofficial fan project, not affiliated with or endorsed by Nintendo. The Legend of Zelda and Ocarina of
-Time are trademarks of Nintendo.
+Hookshot is an unofficial fan project, not affiliated with or endorsed by Nintendo. The game and its names are trademarks of Nintendo.

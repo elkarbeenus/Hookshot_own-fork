@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=LaküenRecomp Builder
-Comment=Builds Ocarina of Time for PC from your own copy of the game
+Comment=Builds the game for PC from your own copy
 Exec=AppRun
 Icon=hookshot
 Categories=Game;

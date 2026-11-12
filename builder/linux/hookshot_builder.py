@@ -27,6 +27,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "nx2"))
 sys.path.insert(0, os.path.join(ROOT, "third_party", "a64-kit", "tools"))
 import linux_update  # noqa: E402  (the release check and the part download)
+import lakuen_profiles  # noqa: E402  (LaküenRecomp: the device profiles, PC / Steam Deck / Legion Go S)
 import make_game  # noqa: E402  (LANGUAGES, BUILD_ID)
 import pipeline_share  # noqa: E402  (Save my pipeline list: the zip for the "Submit your pipelines" issue)
 import toolchain  # noqa: E402  (default_jobs: RX_JOBS)
@@ -352,7 +353,7 @@ def add_to_menu(folder):
     apps = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "applications")
     os.makedirs(apps, exist_ok=True)
     with open(os.path.join(apps, "hookshot.desktop"), "w", encoding="utf-8") as f:
-        f.write("[Desktop Entry]\nType=Application\nName=%s\nComment=The Legend of Zelda: Ocarina of Time, built from your copy\n"
+        f.write("[Desktop Entry]\nType=Application\nName=%s\nComment=Built from your own copy of the game\n"
                 "Exec=%s\nPath=%s\nIcon=%s\nCategories=Game;\nTerminal=false\nStartupWMClass=%s\n"
                 % (APP_NAME, desktop_exec(os.path.join(folder, "hookshot")), folder, icon, APP_ID))
 
@@ -528,6 +529,32 @@ def _arg(name):
         if index + 1 < len(args):
             return args[index + 1]
     return None
+
+
+def profile_question(profile, again):
+    """(LaküenRecomp) The question the builder asks before applying a device profile"""
+    head = ("New recommended settings for your %s." if again else "This looks like a %s.") % profile["title"]
+    return ("%s\n\nApply the recommended settings for it?\n\nYes: apply them (your current settings are kept and can be "
+            "restored under Device profile).\nNo: keep your own settings.\nCancel: ask again next time." % head)
+
+
+def offer_profile(folder, ask, device=None):
+    """(LaküenRecomp) Offer the device's profile once (and again when its version goes up); ask(text) answers True (apply),
+    False (keep) or None (later). Returns what was done"""
+    if not folder or not os.path.isdir(folder):
+        return None
+    profile = lakuen_profiles.load(device or lakuen_profiles.detect())
+    if not lakuen_profiles.needs_prompt(folder, profile):
+        return None
+    again = lakuen_profiles.read_marker(folder).get("device") == profile["device"]
+    answer = ask(profile_question(profile, again))
+    if answer is None:
+        return None
+    if answer:
+        lakuen_profiles.apply(folder, profile)
+        return "applied"
+    lakuen_profiles.keep(folder, profile)
+    return "kept"
 
 
 class Builder(tk.Tk):
@@ -1148,8 +1175,9 @@ class Builder(tk.Tk):
         f = ttk.Frame(page, padding=(px(48), px(24), px(48), px(56)))
         f.pack(fill="both", expand=True)
         ttk.Frame(f, width=px(800), height=0).pack()
-        ttk.Label(f, text="THE LEGEND OF ZELDA", style="Section.TLabel").pack()
-        ttk.Label(f, text="Ocarina of Time", style="Display.TLabel").pack(pady=(px(4), 0))
+        # (LaküenRecomp: the builder's own name, no game's; the device profile below the folder)
+        ttk.Label(f, text="READY TO PLAY", style="Section.TLabel").pack()
+        ttk.Label(f, text=APP_NAME, style="Display.TLabel").pack(pady=(px(4), 0))
         ttk.Label(f, text=folder, style="Sub.TLabel", wraplength=px(600), justify="center").pack(pady=(px(8), 0))
         self.launch_status = tk.StringVar(value="Checking for updates...")
         ttk.Label(f, textvariable=self.launch_status, style="Note.TLabel", wraplength=px(600), justify="center").pack(pady=(px(16), 0))
@@ -1162,7 +1190,56 @@ class Builder(tk.Tk):
         ttk.Button(f, text="Open the game folder", style="Link.TButton", cursor="hand2",
                    command=lambda: subprocess.Popen(["xdg-open", folder])).pack(pady=(px(22), 0))
         self.share_row(f, folder).pack(pady=(px(4), 0))
+        self.profile_text = tk.StringVar(value="")
+        ttk.Button(f, textvariable=self.profile_text, style="Link.TButton", cursor="hand2",
+                   command=lambda: self.profile_dialog(folder)).pack(pady=(px(4), 0))
+        self.refresh_profile(folder)
+        self.after(300, lambda: self.offer_profile_now(folder))
         self.lookup_latest()
+
+    def refresh_profile(self, folder):   # (LaküenRecomp)
+        line = lakuen_profiles.status(folder)
+        detected = lakuen_profiles.load(lakuen_profiles.detect())["title"]
+        self.profile_text.set("Device profile: %s" % (line or "%s detected, not chosen yet" % detected))
+
+    def offer_profile_now(self, folder):   # (LaküenRecomp: once, and again for a newer version of the profile)
+        offer_profile(folder, lambda text: messagebox.askyesnocancel(APP_NAME, text, parent=self))
+        self.refresh_profile(folder)
+
+    def profile_dialog(self, folder):   # (LaküenRecomp: choose any device's profile, or put the settings from before back)
+        px = self.px
+        top = tk.Toplevel(self)
+        top.title("Device profile")
+        top.transient(self)
+        body = ttk.Frame(top, padding=px(20))
+        body.pack(fill="both", expand=True)
+        detected = lakuen_profiles.detect()
+        ttk.Label(body, text="Recommended settings for a device. Detected: %s." % lakuen_profiles.load(detected)["title"],
+                  wraplength=px(460), justify="left").pack(anchor="w")
+        choice = tk.StringVar(value=detected)
+        for device in lakuen_profiles.DEVICES:
+            ttk.Radiobutton(body, text=lakuen_profiles.load(device)["title"], value=device, variable=choice).pack(anchor="w",
+                                                                                                              pady=(px(4), 0))
+        note = tk.StringVar(value=lakuen_profiles.status(folder) or "")
+        ttk.Label(body, textvariable=note, style="Note.TLabel", wraplength=px(460), justify="left").pack(anchor="w",
+                                                                                                       pady=(px(10), 0))
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=(px(14), 0))
+
+        def do_apply():
+            lakuen_profiles.apply(folder, lakuen_profiles.load(choice.get()))
+            note.set("Applied. Your settings from before can be restored here.")
+            self.refresh_profile(folder)
+
+        def do_restore():
+            lakuen_profiles.restore(folder)
+            note.set("Your settings from before the profile are back.")
+            self.refresh_profile(folder)
+
+        ttk.Button(row, text="Close", command=top.destroy, cursor="hand2").pack(side="right")
+        ttk.Button(row, text="Apply", style="Primary.TButton", command=do_apply, cursor="hand2").pack(side="right", padx=px(4))
+        if lakuen_profiles.can_restore(folder):
+            ttk.Button(row, text="Restore previous settings", command=do_restore, cursor="hand2").pack(side="left")
 
     def track_id(self):
         return next((k for k, v in TRACK_NAMES.items() if v == self.track.get()), "release")
@@ -1516,6 +1593,10 @@ class Builder(tk.Tk):
             self.stage_text.set("Stopping the update")
 
     def play_and_close(self, folder):
+        try:   # (LaküenRecomp: the device profile's question before the first start, as on the launcher's page)
+            offer_profile(folder, lambda text: messagebox.askyesnocancel(APP_NAME, text, parent=self))
+        except OSError:
+            pass
         game = play(folder)
         # (LaküenRecomp) Started from Steam (a non-Steam game's shortcut), the launcher stays, hidden, until the game ends: when it
         # closed at once, Steam took the game for ended and dropped its controller layout, and after the first press the game
@@ -1538,6 +1619,14 @@ def main():
     if "--play" in sys.argv[1:]:
         folder = _arg("--play") or load_config().get("out")
         if game_ready(folder):
+            try:   # (LaküenRecomp: the device profile's question also when Steam starts the game directly)
+                if lakuen_profiles.needs_prompt(folder, lakuen_profiles.load(lakuen_profiles.detect())):
+                    root = tk.Tk()
+                    root.withdraw()
+                    offer_profile(folder, lambda text: messagebox.askyesnocancel(APP_NAME, text, parent=root))
+                    root.destroy()
+            except (tk.TclError, OSError):   # (no display for a question: play as it is)
+                pass
             game = play(folder)
             if game and steam_started() and os.environ.get("HOOKSHOT_PLAY_DETACH", "0") == "0":
                 game.wait()   # (LaküenRecomp: under Steam, as play_and_close)

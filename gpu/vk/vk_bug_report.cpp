@@ -256,7 +256,7 @@ bool value_shown(const std::string& name, const std::string& value) {
 /// The switches set: the game's own (host/hos_main.c env_line_allowed's names) and what loads other code into it (the form
 /// asks about software hooked in), a NAME=VALUE line each, the value as value_shown allows; names: the names alone
 std::string switches(const std::vector<std::string>& env, std::string* names) {
-    static const char* const prefixes[] = {"RX_", "HOS_", "HOOKSHOT_", "EDEN_", "NVN_", "SDL_"};
+    static const char* const prefixes[] = {"RX_", "HOS_", "HOOKSHOT_", "EDEN_", "NVN_", "SDL_", "LAKUEN_"};   // (LaküenRecomp: as hookshot_env.txt)
     static const char* const hooks[] = {"VK_INSTANCE_LAYERS", "VK_LOADER_LAYERS_ENABLE", "VK_DRIVER_FILES", "VK_ICD_FILENAMES",
                                         "ENABLE_VKBASALT", "MANGOHUD", "LD_PRELOAD"};
     std::vector<std::pair<std::string, std::string>> out;
