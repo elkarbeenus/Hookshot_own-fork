@@ -364,9 +364,13 @@ void pool_put(Dead& d) {
 /// presents: destroyed, at most 16 a present (64 while VRAM is short). Returns how many
 size_t pool_trim() {
     std::lock_guard lk(pool_mu);
-    // (LaküenRecomp) while VRAM is short a card of 8 GB or less keeps 128 MB of the pool: given back whole, its targets were made
-    // again at once, 30,000 in a session (5,500 reused)
-    const uint64_t cap = pool_pressed ? (small_vram() ? std::min<uint64_t>(pool_cap(), 128ull << 20) : 0) : pool_cap();
+    // (LaküenRecomp) while VRAM is short a card of 8 GB or less keeps its whole pool: given back whole, its targets were made
+    // again at once, 30,000 in a session (5,500 reused); kept at 128 MB still ~32,000 (43,000 reused) in a 6600 XT session,
+    // and what a destroyed target gave back stayed in VMA's blocks as free space (2.2 GB of the 7.1 the driver counted), so
+    // the count the pressure goes by hardly fell. RX_VK_TARGET_POOL_PRESSED_MB=<n>: that much while short (128: as before)
+    static const uint64_t pressed_cap = getenv("RX_VK_TARGET_POOL_PRESSED_MB")
+        ? (uint64_t)std::max(0, atoi(getenv("RX_VK_TARGET_POOL_PRESSED_MB"))) << 20 : pool_cap();
+    const uint64_t cap = pool_pressed ? (small_vram() ? std::min<uint64_t>(pool_cap(), pressed_cap) : 0) : pool_cap();
     const size_t most = pool_pressed ? 64 : 16;
     size_t n = 0;
     for (auto it = target_pool.begin(); it != target_pool.end() && n < most;) {

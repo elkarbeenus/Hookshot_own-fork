@@ -3745,8 +3745,25 @@ static bool small_dedicated_card(const VkPhysicalDeviceProperties& props, const 
 
 /// (LaküenRecomp) Once, for options kept by an update: Auto on such a card becomes 75 %. A marker file beside
 /// hookshot_options.ini keeps it to once, so a player who picks Auto again keeps it. LAKUEN_SMALL_VRAM_RES=0: off
+/// (LaküenRecomp) Once, for options kept by an update: Output resolution "the game's" on such a card becomes 1920x1080. The game's
+/// own is 2048x1152, and its window images 2560x1440: on an 8 GB RX 6600 XT the render targets, frame interpolation and the free
+/// space they left in VMA's blocks (1.5 GB) took the textures' room, the budget fell to 1.3-1.6 GB against ~2 GB used and the cache
+/// churned (Hyrule Field 22 fps). The run at 1920x1080 kept ~0.5 GB free in the blocks and a ~2.1 GB budget. The game reads the
+/// size at its start, so from the next one. LAKUEN_SMALL_VRAM_OUTPUT=0: off
+static void small_card_output_once(const VkPhysicalDeviceProperties& props) {
+    if (!env_int("LAKUEN_SMALL_VRAM_OUTPUT", 1) || env_holds(&opts.output_res) || opts.output_res != 0) return;
+    const std::string marker = ini_path() + ".small_vram_output";
+    if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
+    opts.output_res = 3;   // (kOutputs[3]: 1920x1080)
+    save();
+    if (FILE* f = fopen(marker.c_str(), "wb")) { fputs("1\n", f); fclose(f); }
+    logf("vk: %s: Output resolution set once to 1920x1080 for a card of 8 GB or less, from the next start "
+         "(LAKUEN_SMALL_VRAM_OUTPUT=0: leave the options)", props.deviceName);
+}
+
 static void small_card_resolution_once(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
     if (!small_dedicated_card(props, mem)) return;
+    small_card_output_once(props);
     if (!env_int("LAKUEN_SMALL_VRAM_RES", 1) || env_holds(&opts.resolution) || opts.resolution != 0) return;
     const std::string marker = ini_path() + ".small_vram_res";
     if (FILE* f = fopen(marker.c_str(), "rb")) { fclose(f); return; }
@@ -3773,6 +3790,7 @@ void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkP
         // (LaküenRecomp) the defaults, but a card of up to 8.5 GB starts at Render resolution 75 % (small_dedicated_card)
         if (small_dedicated_card(props, mem) && env_int("LAKUEN_SMALL_VRAM_RES", 1) && !env_holds(&opts.resolution)) {
             opts.resolution = 2;
+            if (env_int("LAKUEN_SMALL_VRAM_OUTPUT", 1) && !env_holds(&opts.output_res) && opts.output_res == 0) opts.output_res = 3;
             save();
             logf("vk: first start on %s (%llu MB of VRAM): Render resolution 75 %%", props.deviceName, (unsigned long long)mb);
         }
