@@ -536,12 +536,12 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Game speed | Per frame, Real time | Real time |
 | | Field of view | 50% to 150%, in steps of 5; applies immediately during gameplay | 100% (original) |
 | | Text speed | Normal, 2x, 4x, Instant | Normal |
-| | Text size | Original, 110%, 125%, 150%, 175% (dialogue, Navi and signs) | Original |
+| | Text size | Original, 110%, 125%, 150%, 175% (dialogue, the fairy's hints and signs) | Original |
 | | Microphone | Off, Default, or each microphone by name | Default |
 | | Game language | The game's 16 languages, each by its own name (after a restart) | The one built with |
 | | Menu language | Auto (the game's language), or English, Português (Brasil), Español (Latinoamérica), Español (España), Français, Deutsch, Italiano, Nederlands, Polski, Русский, 日本語, 한국어, 简体中文, 繁體中文 | Auto |
 | | Discord status | Off, On ("Playing Hookshot" and the time played in your Discord status, while Discord runs on this PC) | On |
-| | Skip opening | Off, On (skips the new-game opening: the story movie and Navi waking Link; later cutscenes and the title screen stay) | Off |
+| | Skip opening | Off, On (skips the new-game opening: the story movie and the fairy waking the hero; later cutscenes and the title screen stay) | Off |
 | | Bug report | Saves a report into a new folder in `bug-reports` (below) | |
 | Controls | Controller in background | Off, On | Off |
 | | Mouse camera | As the stick, Native | As the stick |
@@ -792,7 +792,7 @@ control takes two of each), press <kbd>Enter</kbd> (or the bottom face button), 
 puts them all back. A gamepad button taken from another Switch button swaps with it. The page saves them in
 `hookshot_options.ini`.
 
-**Ocarina notes:** the page gains five rows, `Ocarina note (L)`, `(R)`, `(A)`, `(Y)`, `(X)`, unset by default: the game's own
+**Instrument notes:** the page gains five rows, `Ocarina note (L)`, `(R)`, `(A)`, `(Y)`, `(X)`, unset by default: the game's own
 buttons play until you bind a note to a key or gamepad input of your own, and a bound note then answers only that input while
 the game waits for it. A dialogue or cutscene that takes the buttons ends the wait, and a song lesson keeps the game's own too.
 
@@ -964,7 +964,7 @@ the row offers FSR 3.1 on any Vulkan 1.3 GPU with push descriptors, extended sto
 without a format (`vk: fsr3: ... can run on this GPU` in the log). It upscales on the same inputs as DLSS and FSR 4: the
 scene's colour, its depth, motion from the camera with the skinned characters' own drawn over it (Link, his shield and
 the people around him keep their outline while they move), and the same camera jitter (`RX_VK_FSR_JITTER=0` turns it
-off). Things that move by themselves and are not skinned (Navi's body, props) can still trail. `RX_VK_FSR3_CHAIN=0` gives
+off). Things that move by themselves and are not skinned (the fairy's body, props) can still trail. `RX_VK_FSR3_CHAIN=0` gives
 it the camera's motion alone, as before. With HDR on **Native**, it takes the game's HDR colour as linear light, so
 highlights above the paper white are kept (`RX_VK_FSR3_HDR=0`: cut at the paper white, as before; with
 `RX_VK_FSR3_CHAIN=0` they are cut too).
