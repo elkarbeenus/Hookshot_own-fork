@@ -86,9 +86,8 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   upstream's larger sizes) goes down to a quarter or Off on every device; `LAKUEN_SHADOW_SCALE=<0.25-4>` sets any size (1: the
   game's), `LAKUEN_SHADOWS=0` draws none. (`gpu/vk/shadow_res.h`, `gpu/vk/vk_draw.cpp`)
 - The game's code is tuned for the Legion Go S's Zen 3+ cores, as for the Deck's Zen 2. (`nx2/host_cpu.py`)
-- While RAM is short the idle upload memory goes and the heap is trimmed at once. The Graphics tab's **Shader preparation**
-  row (this fork's) can make the shaders as the game asks instead of all at the start (the start's 18,713 programs and
-  25,337 pipelines held ~4 GB of a Steam Deck's RAM); the profiles keep **All at start**, which stutters less.
+- While RAM is short the idle upload memory goes and the heap is trimmed at once. Every shader is made at the start on
+  every device (making them as the game asked saved RAM but stuttered; `RX_VK_PRECOMPILE=0` still turns it off).
   **Effect pass 1** and **Ground fog** leave two costly passes out, at once; two more passes are always drawn, as walls and
   textures turned white without them. The handheld profiles (version 4) turn both off. The **Effect finder** rows rank
   the game's passes by GPU time and leave any one out at once, to tell which effect each is; the builder's **Create a
@@ -547,7 +546,6 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Effect finder | On, Off: the game's passes timed on the GPU and ranked for the two rows below; each change logged for the report (after a restart; a little GPU time) | Off |
 | | Finder pass | #1-#20: the pass by its GPU cost, most first (rank, ms a frame, draws a frame); the ranking holds while it is off | #1 |
 | | Finder pass drawn | On, Off: the pass picked above drawn or left out, at once | On |
-| | Shader preparation | All at start (every shader this folder has seen made before the game, kept in RAM), As needed (each as the game asks, from the caches: far less RAM, now and then a short stutter) (after a restart; `RX_VK_PRECOMPILE` decides over the row) | All at start |
 | | GPU device | Auto, or each graphics card by name (after a restart) | Auto |
 | | VRAM budget | Auto, 3.6, 4.8, 6, 7.5, 9, 11 GB (2.2 GB only from the Minimum (4GB) preset); a quality preset sets it | Auto |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |

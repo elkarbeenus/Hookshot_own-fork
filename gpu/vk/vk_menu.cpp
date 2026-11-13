@@ -134,7 +134,6 @@ const char* tx_finder_pick(int v) {   // (LaküenRecomp: the Effect finder's pas
     else snprintf(b, sizeof b, "#%d  %.2f ms, %.0f draws  %08llx", v, ms, draws, (unsigned long long)(key >> 32));
     return b;
 }
-const char* tx_shader_prep(int v) { return v ? "As needed" : "All at start"; }   // (LaküenRecomp)
 const char* tx_fps_level(int v) { return fps_stats::level_name(v); }
 const char* tx_fps_corner(int v) { return fps_stats::corner_name(v); }   // (the FPS counter row: Off, FPS, Frame time, Graph, Breakdown)
 // (LaküenRecomp) The shadow maps' quality, smaller instead of upstream's larger (opts.shadow_res; vk_texture.cpp create,
@@ -1301,10 +1300,6 @@ Row rows[] = {
      false, true},
     {TAB_GRAPHICS, "Finder pass drawn", &opts.finder_draw, 0, 1, 1, tx_onoff,
      "Off leaves the pass picked above out at once.", nullptr, false, true},
-    {TAB_GRAPHICS, "Shader preparation", &opts.shader_prep, 0, 1, 1, tx_shader_prep,
-     "All at start: every shader this game folder has seen is made before the game, for no stutter, and kept in RAM. As needed: "
-     "each one as the game asks, from the caches; far less RAM, now and then a short stutter. Applies after a restart.", nullptr,
-     true, true},
     // (the rows to change when something is wrong, or on a card short of memory: last)
     {TAB_GRAPHICS, "GPU and memory", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},
     {TAB_GRAPHICS, "GPU device", &opts.gpu_device, 0, 8, 1, tx_gpu,

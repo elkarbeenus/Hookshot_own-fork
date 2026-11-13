@@ -8076,8 +8076,7 @@ bool precompile_wanted() {
 #else
     bool on = false;
 #endif
-    // (LaküenRecomp: Shader preparation As needed, shader_preparation=1: none made at the start; RX_VK_PRECOMPILE over it)
-    if (on && menu_file_int("shader_preparation", 0) == 1) on = false;
+    // (LaküenRecomp: every shader is made at the start on every device; RX_VK_PRECOMPILE=0 alone turns it off)
     if (const char* e = getenv("RX_VK_PRECOMPILE")) on = atoi(e) != 0;
     static bool told;
     if (!told) told = true, logf("vk: shader preparation: %s", on ? "all at the start" : "as the game asks");
