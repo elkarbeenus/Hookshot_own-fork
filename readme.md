@@ -18,7 +18,7 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 |---|---|
 | Upstream | [NotRexed/Hookshot](https://github.com/NotRexed/Hookshot), `main` |
 | Forked at | [`49f75dc`](https://github.com/NotRexed/Hookshot/commit/49f75dc82fb604643390ac7f95b1f5251b3ba09e) (2026-11-11) |
-| Last synced with upstream | [`9b6072cd`](https://github.com/NotRexed/Hookshot/commit/9b6072cd) (2026-11-12, merged into the fork branch) |
+| Last synced with upstream | [`8b762704`](https://github.com/NotRexed/Hookshot/commit/8b762704) (2026-11-13, merged into the fork branch) |
 | Fork branch | `handheld-rdna2` (one branch and one build for every device) |
 | License | GPL-3.0-or-later, as upstream ([LICENSE](LICENSE)) |
 | Output | A Linux AppImage (`LakuenRecomp-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
@@ -44,10 +44,10 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   Settings kept from an older version get a one-time fix per device (each with a marker file beside
   `hookshot_options.ini`, so a player's later choice stays).
 - `hookshot_env.txt` takes this fork's `LAKUEN_` switches too. (`host/hos_main.c`)
-- **Updates from this fork:** the builder and the game look for new releases here (elkarbeenus/LakuenRecompBuilder), never
+- **Updates from this fork:** the builder looks for new releases here (elkarbeenus/LakuenRecompBuilder), never
   at NotRexed/Hookshot's, whose newer versions would replace this fork's code; **Update** then offers them. From v0.3.3 on:
-  older builders did not look, so v0.3.3 is downloaded once by hand. `LAKUEN_UPDATE_CHECK=0` turns the builder's check off.
-  (`builder/linux/linux_update.py`, `host/hos_update.c`)
+  older builders did not look, so v0.3.3 is downloaded once by hand. `LAKUEN_UPDATE_CHECK=0` turns the builder's check off. (The game itself
+  no longer checks since upstream's #2926.) (`builder/linux/linux_update.py`)
 - **Transfer saves:** a link on the launcher's page copies the save slots and the game's settings into the game from
   LaküenPlay / Lichii, an Eden-folder emulator, Eglantine or any folder, or out of it, after backing up the side it
   overwrites (`scripts/oot_saves.py`, which also runs alone; **Check first** says what it would do).
@@ -92,7 +92,8 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   out, at once. The handheld profiles (version 3) set both. The **Effect finder** rows rank the game's passes by GPU time
   and leave any one out at once, to tell which effect each is; the builder's **Create a report to send in** puts a summary
   (frame rate over the run, RAM and swap, shaders, the costliest GPU work, the finder's changes, warnings) with the log and
-  the settings into one zip. (`gpu/vk/vk_gprof.cpp`, `builder/linux/lakuen_report.py`) (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`, `gpu/vk/vk_menu.cpp`)
+  the settings into one zip. (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`, `gpu/vk/vk_menu.cpp`, `gpu/vk/vk_gprof.cpp`,
+  `builder/linux/lakuen_report.py`)
 - The game reports which profile it starts with (`oe: profile ...` in the log). (`host/nn_applet.c`)
 
 - The first start uses the menu's Handheld settings with frame generation off (`RX_VK_AUTO_HANDHELD=0` keeps the docked
