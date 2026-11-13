@@ -555,6 +555,19 @@ SAVE_SOURCES = (
 )
 
 
+def playtime_text(folder):
+    """(LaküenRecomp) "Played: 12 h 5 min" from lakuen_playtime.txt (the game adds a minute at a time), None before any"""
+    try:
+        with open(os.path.join(folder, "lakuen_playtime.txt"), encoding="utf-8") as f:
+            seconds = int(f.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    if seconds < 60:
+        return None
+    hours, minutes = seconds // 3600, seconds % 3600 // 60
+    return "Played: %d h %d min" % (hours, minutes) if hours else "Played: %d min" % minutes
+
+
 def saves_script():
     return os.path.join(ROOT, "scripts", "oot_saves.py")
 
@@ -1288,7 +1301,11 @@ class Builder(tk.Tk):
         # (LaküenRecomp: the builder's own name, no game's; the device profile below the folder)
         ttk.Label(f, text="READY TO PLAY", style="Section.TLabel").pack()
         ttk.Label(f, text=APP_NAME, style="Display.TLabel").pack(pady=(px(4), 0))
+        ttk.Label(f, text="Own tuned fork of Hookshot", style="Note.TLabel").pack()
         ttk.Label(f, text=folder, style="Sub.TLabel", wraplength=px(600), justify="center").pack(pady=(px(8), 0))
+        played = playtime_text(folder)
+        if played:
+            ttk.Label(f, text=played, style="Note.TLabel").pack(pady=(px(4), 0))
         self.launch_status = tk.StringVar(value="Checking for updates...")
         ttk.Label(f, textvariable=self.launch_status, style="Note.TLabel", wraplength=px(600), justify="center").pack(pady=(px(16), 0))
         buttons = ttk.Frame(f)

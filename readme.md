@@ -87,13 +87,17 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   game's), `LAKUEN_SHADOWS=0` draws none. (`gpu/vk/shadow_res.h`, `gpu/vk/vk_draw.cpp`)
 - The game's code is tuned for the Legion Go S's Zen 3+ cores, as for the Deck's Zen 2. (`nx2/host_cpu.py`)
 - While RAM is short the idle upload memory goes and the heap is trimmed at once. The Graphics tab's **Shader preparation**
-  row (this fork's) makes the shaders as the game asks instead of all at the start, where the start's 18,713 programs and
-  25,337 pipelines held ~4 GB of a Steam Deck's RAM; four **Effect pass** rows leave the costliest passes after the shadows
-  out, at once. The handheld profiles (version 3) set both. The **Effect finder** rows rank the game's passes by GPU time
-  and leave any one out at once, to tell which effect each is; the builder's **Create a report to send in** puts a summary
-  (frame rate over the run, RAM and swap, shaders, the costliest GPU work, the finder's changes, warnings) with the log and
-  the settings into one zip. (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`, `gpu/vk/vk_menu.cpp`, `gpu/vk/vk_gprof.cpp`,
-  `builder/linux/lakuen_report.py`)
+  row (this fork's) can make the shaders as the game asks instead of all at the start (the start's 18,713 programs and
+  25,337 pipelines held ~4 GB of a Steam Deck's RAM); the profiles keep **All at start**, which stutters less.
+  **Effect pass 1** and **Ground fog** leave two costly passes out, at once; two more passes are always drawn, as walls and
+  textures turned white without them. The handheld profiles (version 4) turn both off. The **Effect finder** rows rank
+  the game's passes by GPU time and leave any one out at once, to tell which effect each is; the builder's **Create a
+  report to send in** puts a summary (frame rate over the run, RAM and swap, shaders, the costliest GPU work, the finder's
+  changes, warnings) with the log and the settings into one zip. (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`,
+  `gpu/vk/vk_menu.cpp`, `gpu/vk/vk_gprof.cpp`, `builder/linux/lakuen_report.py`)
+- **Time played:** the game adds up the time it runs in `lakuen_playtime.txt` in the game folder, and the builder's
+  launcher page shows it. `LAKUEN_PLAYTIME=0` keeps none. The launcher and the in-game menu's banner say it is an own
+  tuned fork of Hookshot. (`gpu/vk/vk_menu.cpp`, `builder/linux/hookshot_builder.py`)
 - The game reports which profile it starts with (`oe: profile ...` in the log). (`host/nn_applet.c`)
 
 - The first start uses the menu's Handheld settings with frame generation off (`RX_VK_AUTO_HANDHELD=0` keeps the docked
@@ -149,6 +153,22 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 - The AppImage job builds in an Ubuntu 24.04 container with GCC 13 from Ubuntu's archive (no Launchpad PPA) and public DNS
   resolvers. The AppImage therefore needs glibc 2.39 or newer; SteamOS and current distributions have it.
   (`.github/workflows/linux-appimage.yml`)
+
+### Known issues
+
+What does not run well yet in this fork (tested on a desktop RX 6600 XT, a Steam Deck OLED and a Legion Go S):
+
+- **Legion Go S / Steam Deck:** playable, mostly 30 fps (60 with frame generation), but busy areas such as the open
+  field drop below 30 now and then: the CPU records up to 2,800 draws a frame there. The Steam Deck runs short of RAM
+  in some areas.
+- **Shadows** sometimes pop up for a moment even with Shadow quality at Off.
+- **Dialogue log:** rarely, glyph-like garbage in the text of the dialogue history.
+- **Black textures** for a moment after closing the quick item selection (R1).
+- **Lighting:** some interiors (around the market) can look too bright, with high contrast and a haze. The ground fog
+  pass reads a buffer that is not bound (zeros); turning it off does not change this.
+- **Sharpness:** a high Sharpness value makes the picture grainy with AMD FSR 3.1; 0-20 % looks cleaner.
+- **Effect pass 1** shows no visible difference yet; what it draws is still open.
+- The upstream project is no longer reachable on GitHub (2026-11-13); this fork keeps its code as of that day.
 
 ### Versions
 
@@ -518,9 +538,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Anisotropic filtering | Game's, 2x, 4x, 8x, 16x | 16x |
 | | Shadow quality | Game, Medium (half size), Low (a third), Very low (a quarter), Off (none drawn) (after a restart; at Game, AMD handhelds draw them at half size; `LAKUEN_SHADOW_SCALE=<0.25-4>` and `LAKUEN_SHADOWS=0` decide over the row) | Game |
 | | Effect pass 1 | On, Off: a costly pass of the game's (a 512x512 picture made now and then) drawn or left out, at once (a test row of this fork's) | On |
-| | Effect pass 2 | On, Off: a costly pass of a few full-screen draws (a test row) | On |
-| | Effect pass 3 | On, Off: a costly pass of a few full-screen draws (a test row) | On |
-| | Effect pass 4 | On, Off: a costly half-size pass (a test row) | On |
+| | Ground fog | On, Off: the fog near the ground (a half-size pass), drawn or left out, at once | On |
 | | Effect finder | On, Off: the game's passes timed on the GPU and ranked for the two rows below; each change logged for the report (after a restart; a little GPU time) | Off |
 | | Finder pass | #1-#20: the pass by its GPU cost, most first (rank, ms a frame, draws a frame); the ranking holds while it is off | #1 |
 | | Finder pass drawn | On, Off: the pass picked above drawn or left out, at once | On |

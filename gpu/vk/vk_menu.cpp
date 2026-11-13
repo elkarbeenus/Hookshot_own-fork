@@ -1284,18 +1284,15 @@ Row rows[] = {
      "How many pixels the shadow maps have, or none at all. Fewer pixels: softer shadows, less GPU time; Off also saves their "
      "draw calls on the CPU. Applies after a restart.",
      hn_shadow_res, true, true},
-    // (LaküenRecomp handheld) the costliest passes a Steam Deck's GPU timing found after the shadows, each left out live, to see
-    // what each one is; and the shaders made at the start or as the game asks (the start's 18,713 programs and 25,337 pipelines
+    // (LaküenRecomp handheld) costly passes a Steam Deck's GPU timing found after the shadows, left out live (Effect pass 1, and
+    // the ground fog; two more stay drawn, as walls turned white without them); and the shaders made at the start or as the game asks (the start's 18,713 programs and 25,337 pipelines
     // held ~4 GB of a Steam Deck's 16)
     {TAB_GRAPHICS, "Effect pass 1", &opts.effect_1, 0, 1, 1, tx_onoff,
      "A costly pass of the game's (a 512x512 picture made now and then). Off leaves it out at once: see what changes.", nullptr,
      false, true},
-    {TAB_GRAPHICS, "Effect pass 2", &opts.effect_2, 0, 1, 1, tx_onoff,
-     "A costly pass of the game's (a few full-screen draws). Off leaves it out at once: see what changes.", nullptr, false, true},
-    {TAB_GRAPHICS, "Effect pass 3", &opts.effect_3, 0, 1, 1, tx_onoff,
-     "A costly pass of the game's (a few full-screen draws). Off leaves it out at once: see what changes.", nullptr, false, true},
-    {TAB_GRAPHICS, "Effect pass 4", &opts.effect_4, 0, 1, 1, tx_onoff,
-     "A costly pass of the game's (a half-size picture). Off leaves it out at once: see what changes.", nullptr, false, true},
+    {TAB_GRAPHICS, "Ground fog", &opts.effect_4, 0, 1, 1, tx_onoff,
+     "The fog near the ground (a half-size pass, one of the costliest after the shadows). Off leaves it out at once.", nullptr,
+     false, true},
     {TAB_GRAPHICS, "Effect finder", &opts.finder, 0, 1, 1, tx_onoff,
      "Times the game's passes on the GPU and ranks them, for the two rows below: pick a pass, turn it off, see what is gone. "
      "Each change goes into the log for the report. Costs a little GPU time; applies after a restart.", nullptr, true, true},
@@ -3166,6 +3163,10 @@ void draw_options(ui::Ctx& c) {
         std::string ver = std::string("Lak\xC3\xBC" "enRecomp ") + HOOKSHOT_VERSION;   // (the fork's name)
         const float room = (c.w - total) * 0.5f - 60 * s - c.safe, px = 15 * s;
         const auto width = [&](float p) { return ui::size_of(c.f.body, p, ver.c_str()).x; };
+        // (LaküenRecomp: says what it is beside the version while there is room; it goes first when there is not)
+        const std::string bare = ver;
+        ver += " \xC2\xB7 own tuned fork of Hookshot";
+        if (width(px) > room) ver = bare;
         if (width(px) > room && ver.find(" (") != std::string::npos) ver.resize(ver.find(" ("));
         // (still too long, as a source build's "v2.0.11-821-g7b81752-dirty" since the Audio tab: at Small and Medium smaller
         // until it fits, on half-point steps, 10 points at the least; at Large, the size for a TV across the room, at its size
@@ -4434,8 +4435,8 @@ bool menu_effect_off(uint64_t key) {   // (LaküenRecomp: the Effect pass rows a
     }
     switch (key) {
     case 0xe40dc98fca54ad01ULL: return !opts.effect_1;
-    case 0x701ae221d88b2908ULL: return !opts.effect_2;
-    case 0xc587820ce7551a01ULL: return !opts.effect_3;
+    // (0x701ae221d88b2908 and 0xc587820ce7551a01, once Effect pass 2 and 3, are always drawn: without them walls and textures
+    // turned white)
     case 0xda7a7ab28b8e73d9ULL: return !opts.effect_4;
     default: return false;
     }
@@ -4901,7 +4902,40 @@ void outputs_follow_screen() {
          dm::ratio_name({sw, sh}).c_str(), added);
 }
 
+// (LaküenRecomp) The time played: lakuen_playtime.txt beside hookshot_options.ini holds the seconds, added each minute the game
+// runs (a gap over two minutes, a suspended device, counts as one), for the builder's launcher page. LAKUEN_PLAYTIME=0: not kept
+static void playtime_tick() {
+    using clock = std::chrono::steady_clock;
+    static const bool on = [] {
+        const char* e = getenv("LAKUEN_PLAYTIME");
+        return !(e && e[0] == '0');
+    }();
+    if (!on) return;
+    static clock::time_point last = clock::now();
+    const auto now = clock::now();
+    const long long gone = std::chrono::duration_cast<std::chrono::seconds>(now - last).count();
+    if (gone < 60) return;
+    last = now;
+    std::string path = ini_path();
+    const size_t slash = path.find_last_of("/\\");
+    path = (slash == std::string::npos ? std::string() : path.substr(0, slash + 1)) + "lakuen_playtime.txt";
+    long long total = 0;
+    if (FILE* f = fopen(path.c_str(), "r")) {
+        if (fscanf(f, "%lld", &total) != 1) total = 0;
+        fclose(f);
+    }
+    total += gone > 120 ? 60 : gone;
+    const std::string tmp = path + ".tmp";
+    if (FILE* f = fopen(tmp.c_str(), "w")) {
+        fprintf(f, "%lld\n", total);
+        fclose(f);
+        remove(path.c_str());
+        rename(tmp.c_str(), path.c_str());
+    }
+}
+
 void menu_tick() {
+    playtime_tick();
     std::lock_guard lk(menu_mu);   // (the control bridge's settings: menu_setting_set)
     share_finish();   // (Save my pipeline list's worker, done)
     fullscreen_tick();

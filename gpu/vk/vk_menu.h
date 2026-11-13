@@ -41,7 +41,7 @@ struct Options {
                           // device's limit at most; gpu/vk/vk_draw.cpp aniso_override, RX_VK_ANISO over it)
     int shadow_res = 0;   // (LaküenRecomp) the shadow quality: 0 the game's, 1 half, 2 a third, 3 a quarter, 4 none; read once, at
                           // the start (vk_texture.cpp create, shadow_resolution_factor)
-    int effect_1 = 1, effect_2 = 1, effect_3 = 1, effect_4 = 1;   // (LaküenRecomp) the Effect pass rows: 1 drawn, 0 left out
+    int effect_1 = 1, effect_4 = 1;   // (LaküenRecomp) Effect pass 1 and Ground fog: 1 drawn, 0 left out
                           // (menu_effect_off, vk_draw.cpp: costly passes a Steam Deck's GPU timing found; live)
     int finder = 0, finder_pick = 1, finder_draw = 1;   // (LaküenRecomp) the Effect finder: on (read at the start), the pass by
                           // rank, drawn (1) or left out (0), live (vk_gprof.h finder_entry, menu_effect_off)
