@@ -12,15 +12,6 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 > NotRexed's and the Hookshot contributors' (see [Credits](#credits)). Problems you only see in this fork belong in
 > [this fork's issues](https://github.com/elkarbeenus/LakuenRecompBuilder/issues), not upstream's.
 
-> [!TIP]
-> **Work in progress:** the newest changes are on the test branch
-> [`handheld-effects`](https://github.com/elkarbeenus/LakuenRecompBuilder/tree/handheld-effects) and its builds in
-> [Actions](https://github.com/elkarbeenus/LakuenRecompBuilder/actions/workflows/linux-appimage.yml) (no release yet):
-> upstream's latest `main`, updates from this fork's own releases, **Transfer saves**, the **Effect finder**, a
-> **report** to send in, **Shader preparation**, lighter handheld profiles and **Standby when done**, the time played on the launcher page. Its
-> [readme](https://github.com/elkarbeenus/LakuenRecompBuilder/blob/handheld-effects/readme.md) describes them. It comes
-> here once it is tested. Its readme also lists the **known issues**: what does not run well yet.
-
 > [!IMPORTANT]
 > The upstream project, NotRexed/Hookshot, is no longer reachable on GitHub since 2026-11-13. This fork keeps its code
 > as of that day and goes on from there.
