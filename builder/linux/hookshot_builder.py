@@ -544,6 +544,46 @@ def standby(run=subprocess.run):
     return False
 
 
+# (LaküenRecomp) The other side of a save transfer: the name scripts/oot_saves.py knows, None for a folder the player chooses.
+# LaküenPlay and other Lichii builds keep their saves in Lichii's folder, or Eden's before Lichii's build 150, which the
+# script looks in both
+SAVE_SOURCES = (
+    ("LaküenPlay / Lichii", "lichii"),
+    ("Eden folder (Orchid, Fritchii, PokeDinner)", "eden"),
+    ("Eglantine", "eglantine"),
+    ("A folder", None),
+)
+
+
+def saves_script():
+    return os.path.join(ROOT, "scripts", "oot_saves.py")
+
+
+def saves_backup_dir():
+    return os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "oot-save-backups")
+
+
+def saves_args(direction, name, folder, dry):
+    """(LaküenRecomp) The script's arguments for the dialog's choices; ValueError when a folder is wanted and not given"""
+    if direction not in ("import", "export"):
+        raise ValueError("Choose import or export.")
+    args = [direction]
+    if name:
+        args.append(name)
+    else:
+        if not folder:
+            raise ValueError("Choose the folder that holds the save (account.sav and slot_ folders), or one above it.")
+        args += ["--from" if direction == "import" else "--to", os.path.expanduser(folder)]
+    if dry:
+        args.append("--dry-run")
+    return args
+
+
+def saves_text(text):
+    """(LaküenRecomp) The script's output for the dialog: this fork's name, no game title"""
+    return (text.replace("Ocarina of Time ", "").replace("Hookshot's", APP_NAME + "'s").replace("Hookshot", APP_NAME).strip())
+
+
 def profile_question(profile, again):
     """(LaküenRecomp) The question the builder asks before applying a device profile"""
     head = ("New recommended settings for your %s." if again else "This looks like a %s.") % profile["title"]
@@ -1263,6 +1303,8 @@ class Builder(tk.Tk):
         self.profile_text = tk.StringVar(value="")
         ttk.Button(f, textvariable=self.profile_text, style="Link.TButton", cursor="hand2",
                    command=lambda: self.profile_dialog(folder)).pack(pady=(px(4), 0))
+        ttk.Button(f, text="Transfer saves", style="Link.TButton", cursor="hand2",
+                   command=self.saves_dialog).pack(pady=(px(4), 0))
         ttk.Button(f, text="Create a report to send in", style="Link.TButton", cursor="hand2",
                    command=lambda: self.make_report(folder)).pack(pady=(px(4), 0))
         self.refresh_profile(folder)
@@ -1329,6 +1371,51 @@ class Builder(tk.Tk):
         ttk.Button(row, text="Apply", style="Primary.TButton", command=do_apply, cursor="hand2").pack(side="right", padx=px(4))
         if lakuen_profiles.can_restore(folder):
             ttk.Button(row, text="Restore previous settings", command=do_restore, cursor="hand2").pack(side="left")
+
+    def saves_dialog(self):   # (LaküenRecomp: scripts/oot_saves.py behind two choices and a button)
+        px = self.px
+        top = tk.Toplevel(self)
+        top.title("Transfer saves")
+        top.transient(self)
+        body = ttk.Frame(top, padding=px(20))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Copies the save slots and the game's settings between this game and an emulator. The side "
+                  "that is overwritten is backed up first (%s). Close both games before copying." % saves_backup_dir(),
+                  wraplength=px(480), justify="left").pack(anchor="w")
+        direction = tk.StringVar(value="import")
+        ttk.Radiobutton(body, text="Into %s (import)" % APP_NAME, value="import", variable=direction).pack(anchor="w", pady=(px(10), 0))
+        ttk.Radiobutton(body, text="Out of %s (export)" % APP_NAME, value="export", variable=direction).pack(anchor="w", pady=(px(2), 0))
+        ttk.Label(body, text="The other side:").pack(anchor="w", pady=(px(10), 0))
+        other = tk.StringVar(value=SAVE_SOURCES[0][0])
+        ttk.Combobox(body, textvariable=other, values=[n for n, _ in SAVE_SOURCES], state="readonly",
+                     width=36).pack(anchor="w", pady=(px(2), 0))
+        folder = tk.StringVar(value="")
+        row_f = ttk.Frame(body)
+        row_f.pack(fill="x", pady=(px(6), 0))
+        ttk.Label(row_f, text="Folder (for \"A folder\"):").pack(side="left")
+        ttk.Entry(row_f, textvariable=folder, width=30).pack(side="left", padx=px(6))
+        ttk.Button(row_f, text="Choose...", cursor="hand2",
+                   command=lambda: folder.set(filedialog.askdirectory(parent=top) or folder.get())).pack(side="left")
+        out = tk.Text(body, height=9, width=70, wrap="word")
+        out.pack(fill="both", expand=True, pady=(px(10), 0))
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=(px(10), 0))
+
+        def go(dry):
+            name = dict(SAVE_SOURCES)[other.get()]
+            try:
+                args = saves_args(direction.get(), name, folder.get().strip(), dry)
+            except ValueError as e:
+                text = str(e)
+            else:
+                r = subprocess.run([sys.executable, "-I", saves_script()] + args, capture_output=True, text=True, timeout=300)
+                text = saves_text((r.stdout or "") + (r.stderr or "")) or ("Done." if r.returncode == 0 else "It did not work.")
+            out.delete("1.0", "end")
+            out.insert("end", text)
+
+        ttk.Button(row, text="Close", command=top.destroy, cursor="hand2").pack(side="right")
+        ttk.Button(row, text="Copy", style="Primary.TButton", command=lambda: go(False), cursor="hand2").pack(side="right", padx=px(4))
+        ttk.Button(row, text="Check first", command=lambda: go(True), cursor="hand2").pack(side="right")
 
     def track_id(self):
         return next((k for k, v in TRACK_NAMES.items() if v == self.track.get()), "release")

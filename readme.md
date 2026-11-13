@@ -48,6 +48,10 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   at NotRexed/Hookshot's, whose newer versions would replace this fork's code; **Update** then offers them. From v0.3.3 on:
   older builders did not look, so v0.3.3 is downloaded once by hand. `LAKUEN_UPDATE_CHECK=0` turns the builder's check off.
   (`builder/linux/linux_update.py`, `host/hos_update.c`)
+- **Transfer saves:** a link on the launcher's page copies the save slots and the game's settings into the game from
+  LaküenPlay / Lichii, an Eden-folder emulator, Eglantine or any folder, or out of it, after backing up the side it
+  overwrites (`scripts/oot_saves.py`, which also runs alone; **Check first** says what it would do).
+  (`builder/linux/hookshot_builder.py`)
 - **Standby when done:** a box on the build's and the update's page puts the device to standby when the build ends (a
   minute's countdown with **Stay awake** first; not after Cancel), for a build overnight. (`builder/linux/hookshot_builder.py`)
 
