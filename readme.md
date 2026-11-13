@@ -95,6 +95,10 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   report to send in** puts a summary (frame rate over the run, RAM and swap, shaders, the costliest GPU work, the finder's
   changes, warnings) with the log and the settings into one zip. (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`,
   `gpu/vk/vk_menu.cpp`, `gpu/vk/vk_gprof.cpp`, `builder/linux/lakuen_report.py`)
+- **Master log:** after each run the builder sums up the game's last five logs (frame rate over the run, RAM and swap,
+  shaders, the costliest GPU work, warnings) in `lakuen_master_log.txt` in the game folder, newest run first; **Open
+  the master log** on the launcher's page shows it, and the report's zip carries it. One small file says what happened.
+  (`builder/linux/lakuen_report.py`)
 - **Time played:** the game adds up the time it runs in `lakuen_playtime.txt` in the game folder, and the builder's
   launcher page shows it. `LAKUEN_PLAYTIME=0` keeps none. The launcher and the in-game menu's banner say it is an own
   tuned fork of Hookshot. (`gpu/vk/vk_menu.cpp`, `builder/linux/hookshot_builder.py`)
@@ -164,7 +168,8 @@ What does not run well yet in this fork (tested on a desktop RX 6600 XT, a Steam
 - **Shadows** sometimes pop up for a moment even with Shadow quality at Off.
 - **Dialogue log:** rarely, glyph-like garbage in the text of the dialogue history.
 - **Black textures** for a moment after closing the quick item selection (R1).
-- **Lighting:** some interiors (around the market) can look too bright, with high contrast and a haze. The ground fog
+- **Lighting:** some places look far too bright, washed out in a white haze (around the market's interiors, a fairy's
+  fountain); Sharpness, the upscaler and frame generation do not change it. The ground fog
   pass reads a buffer that is not bound (zeros); turning it off does not change this.
 - **Sharpness:** a high Sharpness value makes the picture grainy with AMD FSR 3.1; 0-20 % looks cleaner.
 - **Effect pass 1** shows no visible difference yet; what it draws is still open.

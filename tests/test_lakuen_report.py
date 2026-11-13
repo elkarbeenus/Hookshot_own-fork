@@ -56,11 +56,28 @@ class Report(unittest.TestCase):
             path = lr.create(game, dest=out, version="v0.3.2")
             with zipfile.ZipFile(path) as z:
                 names = set(z.namelist())
-                self.assertEqual(names, {"lakuen_report.txt", "hookshot_log.txt", "hookshot_options.ini", "hookshot_env.txt"})
+                self.assertEqual(names, {"lakuen_report.txt", "lakuen_master_log.txt", "hookshot_log.txt", "hookshot_options.ini",
+                                         "hookshot_env.txt"})
                 summary = z.read("lakuen_report.txt").decode("utf-8")
             self.assertIn("shader_preparation=1", summary)
             self.assertIn("RX_VK_PARALLEL=2", summary)
             self.assertIn("game build: v0.3.2", summary)
+
+    def test_master_log_holds_each_run_newest_first(self):
+        with tempfile.TemporaryDirectory() as game:
+            for name, text in (("hookshot_log.txt", LOG), ("hookshot_log.1.txt", LOG.replace("v0.3.2", "v0.3.1"))):
+                with open(os.path.join(game, name), "w", encoding="utf-8") as f:
+                    f.write(text)
+            os.utime(os.path.join(game, "hookshot_log.1.txt"), (1, 1))
+            path = lr.update_master(game)
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("the last 2 run(s)", text)
+            self.assertLess(text.index("hookshot v0.3.2"), text.index("hookshot v0.3.1"))
+            first = os.path.getmtime(path)
+            self.assertEqual(lr.update_master(game), path)   # (no newer log: kept as it is)
+            self.assertEqual(os.path.getmtime(path), first)
+            self.assertIsNone(lr.update_master(os.path.join(game, "none")) if os.path.isdir(os.path.join(game, "none")) else None)
 
     def test_no_log_is_a_clear_error(self):
         with tempfile.TemporaryDirectory() as game:

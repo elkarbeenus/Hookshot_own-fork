@@ -555,6 +555,14 @@ SAVE_SOURCES = (
 )
 
 
+def master_log(folder):
+    """(LaküenRecomp) lakuen_master_log.txt brought up to date after a run (lakuen_report.update_master); never in the way"""
+    try:
+        return lakuen_report.update_master(folder)
+    except Exception:
+        return None
+
+
 def playtime_text(folder):
     """(LaküenRecomp) "Played: 12 h 5 min" from lakuen_playtime.txt (the game adds a minute at a time), None before any"""
     try:
@@ -1322,11 +1330,23 @@ class Builder(tk.Tk):
                    command=lambda: self.profile_dialog(folder)).pack(pady=(px(4), 0))
         ttk.Button(f, text="Transfer saves", style="Link.TButton", cursor="hand2",
                    command=self.saves_dialog).pack(pady=(px(4), 0))
+        ttk.Button(f, text="Open the master log", style="Link.TButton", cursor="hand2",
+                   command=lambda: self.open_master_log(folder)).pack(pady=(px(4), 0))
         ttk.Button(f, text="Create a report to send in", style="Link.TButton", cursor="hand2",
                    command=lambda: self.make_report(folder)).pack(pady=(px(4), 0))
         self.refresh_profile(folder)
         self.after(300, lambda: self.offer_profile_now(folder))
         self.lookup_latest()
+
+    def open_master_log(self, folder):   # (LaküenRecomp: the summary of the last runs, one file to send)
+        path = master_log(folder)
+        if not path:
+            messagebox.showinfo(APP_NAME, "No game log yet: play once, then the master log is made.", parent=self)
+            return
+        try:
+            subprocess.Popen(["xdg-open", path])
+        except OSError:
+            messagebox.showinfo(APP_NAME, path, parent=self)
 
     def make_report(self, folder):   # (LaküenRecomp: one zip with a summary, the game's log and its settings)
         try:
@@ -1351,6 +1371,7 @@ class Builder(tk.Tk):
         self.profile_text.set("Device profile: %s" % (line or "%s detected, not chosen yet" % detected))
 
     def offer_profile_now(self, folder):   # (LaküenRecomp: once, and again for a newer version of the profile)
+        threading.Thread(target=master_log, args=(folder,), daemon=True).start()   # (the last runs' master log, in the background)
         offer_profile(folder, lambda text: messagebox.askyesnocancel(APP_NAME, text, parent=self))
         self.refresh_profile(folder)
 
@@ -1837,6 +1858,7 @@ class Builder(tk.Tk):
             self.withdraw()
             self.update_idletasks()
             game.wait()
+            master_log(folder)
         self.destroy()
 
     def close(self):
@@ -1862,6 +1884,7 @@ def main():
             game = play(folder)
             if game and steam_started() and os.environ.get("HOOKSHOT_PLAY_DETACH", "0") == "0":
                 game.wait()   # (LaküenRecomp: under Steam, as play_and_close)
+                master_log(folder)
             return
     launch = _arg("--launch")
     update = _arg("--update")

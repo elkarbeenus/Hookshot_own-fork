@@ -206,6 +206,48 @@ def summarize(log_text, folder=None, device=None, version=None):
     return "\n".join(out) + "\n"
 
 
+MASTER = "lakuen_master_log.txt"
+MASTER_RUNS = 5
+
+
+def update_master(folder, version=None):
+    """(LaküenRecomp) lakuen_master_log.txt in the game folder: the summary of each of the last runs the game kept
+    (hookshot_log.txt, then .1 to .4), newest first, one file to send. Made again when a log is newer than it; its path, or
+    None without a log"""
+    logs = [os.path.join(folder, LOG)] + [os.path.join(folder, "hookshot_log.%d.txt" % i) for i in range(1, MASTER_RUNS)]
+    logs = [p for p in logs if os.path.isfile(p)]
+    if not logs:
+        return None
+    master = os.path.join(folder, MASTER)
+    try:
+        if os.path.getmtime(master) >= max(os.path.getmtime(p) for p in logs):
+            return master
+    except OSError:
+        pass
+    device = None
+    if lakuen_profiles:
+        try:
+            device = lakuen_profiles.load(lakuen_profiles.detect())["title"]
+        except Exception:
+            device = None
+    parts = ["LaküenRecomp master log: the last %d run(s), newest first (made %s)\n" % (
+        len(logs), datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))]
+    for n, path in enumerate(logs):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            continue
+        when = datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
+        parts.append("\n" + "#" * 72 + "\n# run %d: %s (ended %s)\n" % (n + 1, os.path.basename(path), when) + "#" * 72 + "\n")
+        parts.append(summarize(text, folder if n == 0 else None, device, version))
+    tmp = master + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("".join(parts))
+    os.replace(tmp, master)
+    return master
+
+
 def out_dir():
     home = os.path.expanduser("~")
     for d in ("Downloads", "Desktop"):
@@ -231,8 +273,14 @@ def create(folder, dest=None, version=None):
     summary = summarize(log_text, folder, device, version)
     dest = dest or out_dir()
     path = os.path.join(dest, "LakuenReport-%s.zip" % datetime.datetime.now().strftime("%Y%m%d-%H%M"))
+    try:
+        master = update_master(folder, version)
+    except OSError:
+        master = None
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("lakuen_report.txt", summary)
+        if master:
+            z.write(master, MASTER)
         z.write(log_path, LOG)
         for name in FILES:
             p = os.path.join(folder, name)
