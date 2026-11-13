@@ -532,9 +532,10 @@ def _arg(name):
     return None
 
 
-def power_off(run=subprocess.run):
-    """(LaküenRecomp) Shut the device down (the build's "Shut down when done"): systemd's, else logind's; True when asked"""
-    for command in (["systemctl", "poweroff"], ["loginctl", "poweroff"]):
+def standby(run=subprocess.run):
+    """(LaküenRecomp) Put the device to sleep (the build's "Standby when done"; a Steam Deck wakes with its power button):
+    systemd's, else logind's; True when asked"""
+    for command in (["systemctl", "suspend"], ["loginctl", "suspend"]):
         try:
             if run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30).returncode == 0:
                 return True
@@ -1476,10 +1477,10 @@ class Builder(tk.Tk):
         self.buttons = ttk.Frame(f)
         self.buttons.grid(row=4, column=0, sticky="e", pady=(px(14), 0))
         ttk.Button(self.buttons, text="Cancel", command=self.cancel, cursor="hand2").pack(side="right")
-        # (LaküenRecomp) for a build or an update overnight: the device shuts down when it ends, after a minute to stop it
+        # (LaküenRecomp) for a build or an update overnight: the device goes to standby when it ends, after a minute to stop it
         if not hasattr(self, "shutdown_after"):
             self.shutdown_after = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self.buttons, text="Shut down when done", variable=self.shutdown_after,
+        ttk.Checkbutton(self.buttons, text="Standby when done", variable=self.shutdown_after,
                         cursor="hand2").pack(side="right", padx=(0, px(16)))
         self.stage_text.set("Starting")
 
@@ -1628,26 +1629,28 @@ class Builder(tk.Tk):
                     delattr(self, name)
             self.shutdown_countdown(60)
 
-    def shutdown_countdown(self, left):   # (LaküenRecomp: "Shut down when done", with a minute to stop it)
+    def shutdown_countdown(self, left):   # (LaküenRecomp: "Standby when done", with a minute to stop it)
         if not hasattr(self, "shutdown_note"):
             self.shutdown_note = tk.StringVar()
-            self.shutdown_stop = ttk.Button(self.buttons, text="Don't shut down", cursor="hand2",
+            self.shutdown_stop = ttk.Button(self.buttons, text="Stay awake", cursor="hand2",
                                             command=lambda: setattr(self, "shutdown_cancelled", True))
             self.shutdown_stop.pack(side="left", padx=self.px(4))
             ttk.Label(self.buttons, textvariable=self.shutdown_note, style="Note.TLabel").pack(side="left", padx=self.px(8))
             self.shutdown_cancelled = False
         if self.shutdown_cancelled:
-            self.shutdown_note.set("Not shutting down.")
+            self.shutdown_note.set("Staying awake.")
             self.shutdown_stop.destroy()
             return
         if left > 0:
-            self.shutdown_note.set("Shutting down in %d s" % left)
+            self.shutdown_note.set("Standby in %d s" % left)
             self.after(1000, lambda: self.shutdown_countdown(left - 1))
             return
-        self.shutdown_note.set("Shutting down...")
+        self.shutdown_note.set("Going to standby...")
         self.update_idletasks()
-        if not power_off():
-            self.shutdown_note.set("The device could not be shut down (systemctl poweroff refused).")
+        if standby():
+            self.shutdown_note.set("Back from standby.")   # (shown once the device wakes)
+        else:
+            self.shutdown_note.set("The device could not go to standby (systemctl suspend refused).")
 
     def cancel(self):
         if self.proc and self.proc.poll() is None:
