@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(ROOT, "nx2"))
 sys.path.insert(0, os.path.join(ROOT, "third_party", "a64-kit", "tools"))
 import linux_update  # noqa: E402  (the release check and the part download)
 import lakuen_profiles  # noqa: E402  (LaküenRecomp: the device profiles, PC / Steam Deck / Legion Go S)
+import lakuen_report  # noqa: E402  (LaküenRecomp: the report a player sends in)
 import make_game  # noqa: E402  (LANGUAGES, BUILD_ID)
 import pipeline_share  # noqa: E402  (Save my pipeline list: the zip for the "Submit your pipelines" issue)
 import toolchain  # noqa: E402  (default_jobs: RX_JOBS)
@@ -531,15 +532,77 @@ def _arg(name):
     return None
 
 
-def power_off(run=subprocess.run):
-    """(LaküenRecomp) Shut the device down (the build's "Shut down when done"): systemd's, else logind's; True when asked"""
-    for command in (["systemctl", "poweroff"], ["loginctl", "poweroff"]):
+def standby(run=subprocess.run):
+    """(LaküenRecomp) Put the device to sleep (the build's "Standby when done"; a Steam Deck wakes with its power button):
+    systemd's, else logind's; True when asked"""
+    for command in (["systemctl", "suspend"], ["loginctl", "suspend"]):
         try:
             if run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30).returncode == 0:
                 return True
         except (OSError, subprocess.SubprocessError):
             continue
     return False
+
+
+# (LaküenRecomp) The other side of a save transfer: the name scripts/oot_saves.py knows, None for a folder the player chooses.
+# LaküenPlay and other Lichii builds keep their saves in Lichii's folder, or Eden's before Lichii's build 150, which the
+# script looks in both
+SAVE_SOURCES = (
+    ("LaküenPlay / Lichii", "lichii"),
+    ("Eden folder (Orchid, Fritchii, PokeDinner)", "eden"),
+    ("Eglantine", "eglantine"),
+    ("A folder", None),
+)
+
+
+def master_log(folder):
+    """(LaküenRecomp) lakuen_master_log.txt brought up to date after a run (lakuen_report.update_master); never in the way"""
+    try:
+        return lakuen_report.update_master(folder)
+    except Exception:
+        return None
+
+
+def playtime_text(folder):
+    """(LaküenRecomp) "Played: 12 h 5 min" from lakuen_playtime.txt (the game adds a minute at a time), None before any"""
+    try:
+        with open(os.path.join(folder, "lakuen_playtime.txt"), encoding="utf-8") as f:
+            seconds = int(f.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    if seconds < 60:
+        return None
+    hours, minutes = seconds // 3600, seconds % 3600 // 60
+    return "Played: %d h %d min" % (hours, minutes) if hours else "Played: %d min" % minutes
+
+
+def saves_script():
+    return os.path.join(ROOT, "scripts", "oot_saves.py")
+
+
+def saves_backup_dir():
+    return os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "oot-save-backups")
+
+
+def saves_args(direction, name, folder, dry):
+    """(LaküenRecomp) The script's arguments for the dialog's choices; ValueError when a folder is wanted and not given"""
+    if direction not in ("import", "export"):
+        raise ValueError("Choose import or export.")
+    args = [direction]
+    if name:
+        args.append(name)
+    else:
+        if not folder:
+            raise ValueError("Choose the folder that holds the save (account.sav and slot_ folders), or one above it.")
+        args += ["--from" if direction == "import" else "--to", os.path.expanduser(folder)]
+    if dry:
+        args.append("--dry-run")
+    return args
+
+
+def saves_text(text):
+    """(LaküenRecomp) The script's output for the dialog: this fork's name, no game title"""
+    return (text.replace("Ocarina of Time ", "").replace("Hookshot's", APP_NAME + "'s").replace("Hookshot", APP_NAME).strip())
 
 
 def profile_question(profile, again):
@@ -574,7 +637,7 @@ class Builder(tk.Tk):
         self.title(APP_NAME + " Builder")
         self.apply_scale()
         self.apply_theme()
-        self.minsize(self.px(760), self.px(520))
+        self.minsize(self.px(760), min(self.px(520), self.winfo_screenheight() * 2 // 3))   # (scaled up, no taller than the screen)
         move_old_ngx_sdk()   # (before the settings are read: it may record the license in them)
         self.cfg = load_config()
         self.proc = None
@@ -777,13 +840,14 @@ class Builder(tk.Tk):
                 ("Hs%s.pbar" % style, {"side": "left", "sticky": "ns"})]})])
             s.configure(style + ".Horizontal.TProgressbar", thickness=h, background=GLASS)
 
-        # the log's scroll bar: a thumb on the log, no arrows
-        s.layout("Log.Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
-            ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nsew"})]})])
-        s.configure("Log.Vertical.TScrollbar", troughcolor=LOG, background=RAISED_HOVER, bordercolor=LOG, lightcolor=RAISED_HOVER,
-                    darkcolor=RAISED_HOVER, gripcount=0, arrowsize=px(10))
-        s.map("Log.Vertical.TScrollbar", background=[("active", LINE_STRONG)], lightcolor=[("active", LINE_STRONG)],
-              darkcolor=[("active", LINE_STRONG)])
+        # the scroll bars: a thumb, no arrows, on the log and on a page that scrolls
+        for name, trough in (("Log", LOG), ("Page", PAGE)):
+            s.layout(name + ".Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
+                ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nsew"})]})])
+            s.configure(name + ".Vertical.TScrollbar", troughcolor=trough, background=RAISED_HOVER, bordercolor=trough,
+                        lightcolor=RAISED_HOVER, darkcolor=RAISED_HOVER, gripcount=0, arrowsize=px(10))
+            s.map(name + ".Vertical.TScrollbar", background=[("active", LINE_STRONG)], lightcolor=[("active", LINE_STRONG)],
+                  darkcolor=[("active", LINE_STRONG)])
 
         # Play's triangle, and the hookshot of the window's head
         self.photo("play", px(11) + px(10), px(14), GO,
@@ -920,8 +984,12 @@ class Builder(tk.Tk):
         page = self.page = ttk.Frame(self)
         page.pack(fill="both", expand=True)
         self.header(page, step=0)
-        f = ttk.Frame(page, padding=(px(48), px(6), px(48), px(28)))
-        f.pack(fill="both", expand=True)
+        # (the page scrolls and the row with Build stays in view, as on Windows since #750: on a short screen, the Steam
+        # Deck's 800 px or a scaled one, the rows above pushed the button out of the window)
+        bottom = ttk.Frame(page, padding=(px(48), 0, px(48), px(28)))
+        bottom.pack(side="bottom", fill="x")
+        bottom.columnconfigure(0, weight=1)
+        f, scrolls = self.scrolled(page, padding=(px(48), px(6), px(48), px(18)))
         f.columnconfigure(0, weight=1, minsize=px(580))   # (every page px(800) wide: the window keeps its width, as on Windows)
         f.columnconfigure(1, minsize=px(20))
         f.columnconfigure(2, minsize=px(200))
@@ -983,11 +1051,10 @@ class Builder(tk.Tk):
         ttk.Label(options, text="For NVIDIA RTX graphics cards. NVIDIA's files stay on this PC: never share a game folder built with them.",
                   style="Small.TLabel", wraplength=px(540)).pack(anchor="w", padx=(px(26), 0), pady=(px(2), 0))
 
-        f.rowconfigure(10, weight=1, minsize=px(18))
-        ttk.Label(f, textvariable=self.status, style="Status.TLabel", wraplength=px(800)).grid(
-            row=11, column=0, columnspan=3, sticky="w", pady=(0, px(12)))
-        foot = ttk.Frame(f)
-        foot.grid(row=12, column=0, columnspan=3, sticky="we")
+        ttk.Label(bottom, textvariable=self.status, style="Status.TLabel", wraplength=px(800)).grid(
+            row=0, column=0, sticky="w", pady=(0, px(12)))
+        foot = ttk.Frame(bottom)
+        foot.grid(row=1, column=0, sticky="we")
         foot.columnconfigure(1, weight=1)
         self.space_bar = ttk.Progressbar(foot, maximum=1.0, length=px(160), style="Go.Horizontal.TProgressbar")
         self.space_bar.grid(row=0, column=0)
@@ -999,6 +1066,59 @@ class Builder(tk.Tk):
         self.out.trace_add("write", lambda *a: self.update_space())
         self.update_space()
         self.apply_mode()
+        scrolls()
+
+    def scrolled(self, parent, padding):
+        """a page's body that scrolls when the window is shorter than it: by the wheel or trackpad, the scroll bar (shown only
+        then), or dragging the page by touch. It asks for its height, but no more than the screen has room for. Returns the
+        body and what to call once it is filled"""
+        px = self.px
+        canvas = tk.Canvas(parent, background=PAGE, highlightthickness=0, borderwidth=0, yscrollincrement=px(16))
+        canvas.pack(fill="both", expand=True)
+        body = ttk.Frame(canvas, padding=padding)
+        item = canvas.create_window(0, 0, window=body, anchor="nw")
+        bar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview, style="Page.Vertical.TScrollbar")
+
+        def moved(first, last):
+            bar.set(first, last)
+            if float(first) <= 0 and float(last) >= 1:
+                bar.place_forget()
+            else:   # (over the page's right margin: the body keeps its width)
+                bar.place(in_=canvas, relx=1, x=-px(8), rely=0, relheight=1, anchor="ne")
+
+        def fit(event=None):
+            room = self.winfo_screenheight() - (parent.winfo_reqheight() - canvas.winfo_reqheight()) - px(80)
+            canvas.configure(width=body.winfo_reqwidth(), height=max(px(120), min(body.winfo_reqheight(), room)),
+                             scrollregion=(0, 0, body.winfo_reqwidth(), body.winfo_reqheight()))
+
+        def wheel(event):
+            w = event.widget
+            if isinstance(w, str) or not (str(w) + ".").startswith(str(canvas) + ".") or w.winfo_class() == "TCombobox":
+                return
+            canvas.yview_scroll(-3 if event.num == 4 or (event.num != 5 and event.delta > 0) else 3, "units")
+
+        def drag(w):
+            w.bind("<ButtonPress-1>", lambda e: canvas.scan_mark(0, e.y_root), add="+")
+            w.bind("<B1-Motion>", lambda e: canvas.scan_dragto(0, e.y_root, gain=1), add="+")
+
+        def done():
+            drag(canvas)
+            todo = [body]
+            while todo:
+                w = todo.pop()
+                if w.winfo_class() in ("TFrame", "TLabel"):
+                    drag(w)
+                todo += w.winfo_children()
+            self.update_idletasks()
+            fit()
+
+        canvas.configure(yscrollcommand=moved)
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(item, width=e.width))
+        body.bind("<Configure>", fit)
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.bind_all(sequence, wheel)
+        canvas.bind("<Destroy>", lambda e: [self.unbind_all(s) for s in ("<MouseWheel>", "<Button-4>", "<Button-5>")])
+        return body, done
 
     def share_row(self, parent, folder, wrap=None):
         """Save my pipeline list (share_pipeline_list), and under it what it did"""
@@ -1096,10 +1216,10 @@ class Builder(tk.Tk):
     def lookup_latest(self):
         def run():
             forced = os.environ.get("HOOKSHOT_LATEST_TAG")
-            # (this fork) NotRexed/Hookshot's latest release is not asked for: a newer one there turns Build into "Update builder"
-            # / "Update", which downloads that release in place of this fork's code. HOOKSHOT_CHECK_UPSTREAM=1: asked as before
-            upstream = os.environ.get("HOOKSHOT_CHECK_UPSTREAM") == "1"
-            tag = None if forced == "none" else (forced or (linux_update.latest_tag(track=track) if upstream else None))
+            # (LaküenRecomp) this fork's latest release (linux_update.UPDATE_REPO), never NotRexed/Hookshot's: a newer one here
+            # turns Build into "Update builder" / "Update". LAKUEN_UPDATE_CHECK=0: not asked
+            asked = os.environ.get("LAKUEN_UPDATE_CHECK", "1") != "0"
+            tag = None if forced == "none" else (forced or (linux_update.latest_tag(track=track) if asked else None))
             self.lines.put(("latest", tag or ""))
         track = self.track_id()
         threading.Thread(target=run, daemon=True).start()
@@ -1189,7 +1309,11 @@ class Builder(tk.Tk):
         # (LaküenRecomp: the builder's own name, no game's; the device profile below the folder)
         ttk.Label(f, text="READY TO PLAY", style="Section.TLabel").pack()
         ttk.Label(f, text=APP_NAME, style="Display.TLabel").pack(pady=(px(4), 0))
+        ttk.Label(f, text="Own tuned fork of Hookshot", style="Note.TLabel").pack()
         ttk.Label(f, text=folder, style="Sub.TLabel", wraplength=px(600), justify="center").pack(pady=(px(8), 0))
+        played = playtime_text(folder)
+        if played:
+            ttk.Label(f, text=played, style="Note.TLabel").pack(pady=(px(4), 0))
         self.launch_status = tk.StringVar(value="Checking for updates...")
         ttk.Label(f, textvariable=self.launch_status, style="Note.TLabel", wraplength=px(600), justify="center").pack(pady=(px(16), 0))
         buttons = ttk.Frame(f)
@@ -1204,9 +1328,42 @@ class Builder(tk.Tk):
         self.profile_text = tk.StringVar(value="")
         ttk.Button(f, textvariable=self.profile_text, style="Link.TButton", cursor="hand2",
                    command=lambda: self.profile_dialog(folder)).pack(pady=(px(4), 0))
+        ttk.Button(f, text="Transfer saves", style="Link.TButton", cursor="hand2",
+                   command=self.saves_dialog).pack(pady=(px(4), 0))
+        ttk.Button(f, text="Open the master log", style="Link.TButton", cursor="hand2",
+                   command=lambda: self.open_master_log(folder)).pack(pady=(px(4), 0))
+        ttk.Button(f, text="Create a report to send in", style="Link.TButton", cursor="hand2",
+                   command=lambda: self.make_report(folder)).pack(pady=(px(4), 0))
         self.refresh_profile(folder)
         self.after(300, lambda: self.offer_profile_now(folder))
         self.lookup_latest()
+
+    def open_master_log(self, folder):   # (LaküenRecomp: the summary of the last runs, one file to send)
+        path = master_log(folder)
+        if not path:
+            messagebox.showinfo(APP_NAME, "No game log yet: play once, then the master log is made.", parent=self)
+            return
+        try:
+            subprocess.Popen(["xdg-open", path])
+        except OSError:
+            messagebox.showinfo(APP_NAME, path, parent=self)
+
+    def make_report(self, folder):   # (LaküenRecomp: one zip with a summary, the game's log and its settings)
+        try:
+            game, _kept = linux_update.game_version(folder)
+        except Exception:
+            game = None
+        try:
+            path = lakuen_report.create(folder, version=game)
+        except (ValueError, OSError) as e:
+            messagebox.showerror(APP_NAME, str(e), parent=self)
+            return
+        messagebox.showinfo(APP_NAME, "The report is ready:\n%s\n\nIt holds a summary, the game's last log and its settings "
+                            "files, nothing else. Send that one file." % path, parent=self)
+        try:
+            subprocess.Popen(["xdg-open", os.path.dirname(path)])
+        except OSError:
+            pass
 
     def refresh_profile(self, folder):   # (LaküenRecomp)
         line = lakuen_profiles.status(folder)
@@ -1214,6 +1371,7 @@ class Builder(tk.Tk):
         self.profile_text.set("Device profile: %s" % (line or "%s detected, not chosen yet" % detected))
 
     def offer_profile_now(self, folder):   # (LaküenRecomp: once, and again for a newer version of the profile)
+        threading.Thread(target=master_log, args=(folder,), daemon=True).start()   # (the last runs' master log, in the background)
         offer_profile(folder, lambda text: messagebox.askyesnocancel(APP_NAME, text, parent=self))
         self.refresh_profile(folder)
 
@@ -1251,6 +1409,51 @@ class Builder(tk.Tk):
         ttk.Button(row, text="Apply", style="Primary.TButton", command=do_apply, cursor="hand2").pack(side="right", padx=px(4))
         if lakuen_profiles.can_restore(folder):
             ttk.Button(row, text="Restore previous settings", command=do_restore, cursor="hand2").pack(side="left")
+
+    def saves_dialog(self):   # (LaküenRecomp: scripts/oot_saves.py behind two choices and a button)
+        px = self.px
+        top = tk.Toplevel(self)
+        top.title("Transfer saves")
+        top.transient(self)
+        body = ttk.Frame(top, padding=px(20))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Copies the save slots and the game's settings between this game and an emulator. The side "
+                  "that is overwritten is backed up first (%s). Close both games before copying." % saves_backup_dir(),
+                  wraplength=px(480), justify="left").pack(anchor="w")
+        direction = tk.StringVar(value="import")
+        ttk.Radiobutton(body, text="Into %s (import)" % APP_NAME, value="import", variable=direction).pack(anchor="w", pady=(px(10), 0))
+        ttk.Radiobutton(body, text="Out of %s (export)" % APP_NAME, value="export", variable=direction).pack(anchor="w", pady=(px(2), 0))
+        ttk.Label(body, text="The other side:").pack(anchor="w", pady=(px(10), 0))
+        other = tk.StringVar(value=SAVE_SOURCES[0][0])
+        ttk.Combobox(body, textvariable=other, values=[n for n, _ in SAVE_SOURCES], state="readonly",
+                     width=36).pack(anchor="w", pady=(px(2), 0))
+        folder = tk.StringVar(value="")
+        row_f = ttk.Frame(body)
+        row_f.pack(fill="x", pady=(px(6), 0))
+        ttk.Label(row_f, text="Folder (for \"A folder\"):").pack(side="left")
+        ttk.Entry(row_f, textvariable=folder, width=30).pack(side="left", padx=px(6))
+        ttk.Button(row_f, text="Choose...", cursor="hand2",
+                   command=lambda: folder.set(filedialog.askdirectory(parent=top) or folder.get())).pack(side="left")
+        out = tk.Text(body, height=9, width=70, wrap="word")
+        out.pack(fill="both", expand=True, pady=(px(10), 0))
+        row = ttk.Frame(body)
+        row.pack(fill="x", pady=(px(10), 0))
+
+        def go(dry):
+            name = dict(SAVE_SOURCES)[other.get()]
+            try:
+                args = saves_args(direction.get(), name, folder.get().strip(), dry)
+            except ValueError as e:
+                text = str(e)
+            else:
+                r = subprocess.run([sys.executable, "-I", saves_script()] + args, capture_output=True, text=True, timeout=300)
+                text = saves_text((r.stdout or "") + (r.stderr or "")) or ("Done." if r.returncode == 0 else "It did not work.")
+            out.delete("1.0", "end")
+            out.insert("end", text)
+
+        ttk.Button(row, text="Close", command=top.destroy, cursor="hand2").pack(side="right")
+        ttk.Button(row, text="Copy", style="Primary.TButton", command=lambda: go(False), cursor="hand2").pack(side="right", padx=px(4))
+        ttk.Button(row, text="Check first", command=lambda: go(True), cursor="hand2").pack(side="right")
 
     def track_id(self):
         return next((k for k, v in TRACK_NAMES.items() if v == self.track.get()), "release")
@@ -1456,10 +1659,10 @@ class Builder(tk.Tk):
         self.buttons = ttk.Frame(f)
         self.buttons.grid(row=4, column=0, sticky="e", pady=(px(14), 0))
         ttk.Button(self.buttons, text="Cancel", command=self.cancel, cursor="hand2").pack(side="right")
-        # (LaküenRecomp) for a build or an update overnight: the device shuts down when it ends, after a minute to stop it
+        # (LaküenRecomp) for a build or an update overnight: the device goes to standby when it ends, after a minute to stop it
         if not hasattr(self, "shutdown_after"):
             self.shutdown_after = tk.BooleanVar(value=False)
-        ttk.Checkbutton(self.buttons, text="Shut down when done", variable=self.shutdown_after,
+        ttk.Checkbutton(self.buttons, text="Standby when done", variable=self.shutdown_after,
                         cursor="hand2").pack(side="right", padx=(0, px(16)))
         self.stage_text.set("Starting")
 
@@ -1560,7 +1763,8 @@ class Builder(tk.Tk):
         elif line.startswith("@@error "):
             self.error = line[8:]
         elif line.startswith(make_game.NOT_PREPARED):
-            self.shaders_later = True
+            # (left to the first start; or, the GPU driver having stopped responding, each shader to when it is first drawn)
+            self.shaders_later = "first start" if line.endswith(make_game.FIRST_START) else "first drawn"
         if hasattr(self, "log"):
             self.add_log(line + "\n")
             self.log.see("end")
@@ -1582,8 +1786,10 @@ class Builder(tk.Tk):
                 text += ", compiled in %d:%02d" % (int(compiled) // 60, int(compiled) % 60)
                 if previous > 0:
                     text += " · last time %d:%02d" % (int(previous) // 3600, int(previous) // 60 % 60)
-            if self.shaders_later:
+            if self.shaders_later == "first start":
                 text += " · the shaders are prepared at its first start"
+            elif self.shaders_later:
+                text += " · the shaders were not prepared: each is built when the game first draws it"
             self.stage_text.set(text)
             self.bar.configure(value=1.0)
             try:
@@ -1608,26 +1814,28 @@ class Builder(tk.Tk):
                     delattr(self, name)
             self.shutdown_countdown(60)
 
-    def shutdown_countdown(self, left):   # (LaküenRecomp: "Shut down when done", with a minute to stop it)
+    def shutdown_countdown(self, left):   # (LaküenRecomp: "Standby when done", with a minute to stop it)
         if not hasattr(self, "shutdown_note"):
             self.shutdown_note = tk.StringVar()
-            self.shutdown_stop = ttk.Button(self.buttons, text="Don't shut down", cursor="hand2",
+            self.shutdown_stop = ttk.Button(self.buttons, text="Stay awake", cursor="hand2",
                                             command=lambda: setattr(self, "shutdown_cancelled", True))
             self.shutdown_stop.pack(side="left", padx=self.px(4))
             ttk.Label(self.buttons, textvariable=self.shutdown_note, style="Note.TLabel").pack(side="left", padx=self.px(8))
             self.shutdown_cancelled = False
         if self.shutdown_cancelled:
-            self.shutdown_note.set("Not shutting down.")
+            self.shutdown_note.set("Staying awake.")
             self.shutdown_stop.destroy()
             return
         if left > 0:
-            self.shutdown_note.set("Shutting down in %d s" % left)
+            self.shutdown_note.set("Standby in %d s" % left)
             self.after(1000, lambda: self.shutdown_countdown(left - 1))
             return
-        self.shutdown_note.set("Shutting down...")
+        self.shutdown_note.set("Going to standby...")
         self.update_idletasks()
-        if not power_off():
-            self.shutdown_note.set("The device could not be shut down (systemctl poweroff refused).")
+        if standby():
+            self.shutdown_note.set("Back from standby.")   # (shown once the device wakes)
+        else:
+            self.shutdown_note.set("The device could not go to standby (systemctl suspend refused).")
 
     def cancel(self):
         if self.proc and self.proc.poll() is None:
@@ -1650,6 +1858,7 @@ class Builder(tk.Tk):
             self.withdraw()
             self.update_idletasks()
             game.wait()
+            master_log(folder)
         self.destroy()
 
     def close(self):
@@ -1675,6 +1884,7 @@ def main():
             game = play(folder)
             if game and steam_started() and os.environ.get("HOOKSHOT_PLAY_DETACH", "0") == "0":
                 game.wait()   # (LaküenRecomp: under Steam, as play_and_close)
+                master_log(folder)
             return
     launch = _arg("--launch")
     update = _arg("--update")

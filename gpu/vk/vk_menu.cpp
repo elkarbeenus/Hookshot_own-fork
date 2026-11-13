@@ -16,6 +16,7 @@
 // Later keeps the saved settings for the next start and is not asked again until they change; Restart now saves and
 // closes the window as the player would, and the game starts again (WM_APP + 9: host/hos_relaunch.c).
 #include <atomic>
+#include <ctime>
 #include <chrono>
 #include <cmath>
 #include <utility>
@@ -29,6 +30,7 @@
 #include <vector>
 
 #include "vk_paths.h"
+#include "vk_gprof.h"   // (LaküenRecomp: the Effect finder's ranking)
 #include "vk_menu.h"
 #include "vk_menu_hit.h"
 #include "vk_fps.h"    // (the FPS counter's levels and numbers)
@@ -48,6 +50,7 @@
 #include "vk_reflex.h"
 #include "vk_antilag.h"
 #include "upscaler_rows.h"
+#include "auto_settings.h"
 #include "menu_restart.h"
 #include "vk_menu_i18n.h"
 #include "display_modes.h"   // (the Aspect ratio and Output resolution rows: the screen's sizes and their shapes)
@@ -61,6 +64,7 @@
 #include <csignal>
 #include <cerrno>
 #include <pthread.h>
+#include <sys/stat.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -121,6 +125,15 @@ const char* tx_framegen(int v) {
     return t[v];
 }
 const char* tx_onoff(int v) { return v ? "On" : "Off"; }
+const char* tx_finder_pick(int v) {   // (LaküenRecomp: the Effect finder's pass, from the last GPU timing)
+    static char b[96];
+    uint64_t key = 0;
+    double ms = 0, draws = 0;
+    if (!finder_on()) snprintf(b, sizeof b, "#%d (finder off)", v);
+    else if (!finder_entry(v - 1, &key, &ms, &draws)) snprintf(b, sizeof b, "#%d (timing comes in ~10 s)", v);
+    else snprintf(b, sizeof b, "#%d  %.2f ms, %.0f draws  %08llx", v, ms, draws, (unsigned long long)(key >> 32));
+    return b;
+}
 const char* tx_fps_level(int v) { return fps_stats::level_name(v); }
 const char* tx_fps_corner(int v) { return fps_stats::corner_name(v); }   // (the FPS counter row: Off, FPS, Frame time, Graph, Breakdown)
 // (LaküenRecomp) The shadow maps' quality, smaller instead of upstream's larger (opts.shadow_res; vk_texture.cpp create,
@@ -152,8 +165,8 @@ const char* tx_nits(int v) {
     return b;
 }
 const char* tx_fps_cap(int v) {
-    static const char* const t[] = {"60 (the console's)", "90", "120", "144", "165", "240", "Uncapped"};
-    return t[v < 0 ? 0 : v > 6 ? 6 : v];
+    static const char* const t[] = {"60 (the console's)", "90", "120", "144", "165", "240", "Uncapped", "30"};
+    return t[v < 0 ? 0 : v > 7 ? 7 : v];
 }
 // (hookshot) Motion controls: the choice, and whether a connected controller has a gyroscope (host/pad_sdl.c). Either can be
 // chosen whatever is connected: a pad plugged in later is read when it comes
@@ -725,6 +738,10 @@ const char* hn_ultrawide(int v, int variant) {
     return r > game * 1.01 ? t[2] : r < game * 0.99 ? t[3] : t[1];
 }
 /// Anisotropic filtering: the game's own, or 2x to 16x (vk_draw.cpp aniso_override)
+const char* tx_texture_detail(int v) {
+    static const char* t[] = {"Auto", "Full", "Medium", "Low"};
+    return (unsigned)v < 4 ? t[v] : t[0];
+}
 const char* tx_anisotropy(int v) {
     static const char* t[] = {"Game's", "2x", "4x", "8x", "16x"};
     return (unsigned)v < 5 ? t[v] : t[4];
@@ -828,6 +845,8 @@ const char* tx_menu_size(int v) {
     static const char* t[] = {"Small", "Medium", "Large"};
     return v >= 1 && v <= 3 ? t[v - 1] : t[1];
 }
+const char* tx_auto_run(int v) { return v ? "On" : "Off"; }
+
 const char* tx_stick_dead_zone(int v) {
     static const char* t[] = {"Default (24%)", "5%", "10%", "15%", "20%", "30%"};
     return (unsigned)v < 6 ? t[v] : t[0];
@@ -847,8 +866,9 @@ const char* tx_robust(int v) {
     return (unsigned)v < 3 ? t[v] : t[0];
 }
 const char* tx_preset(int v) {
-    static const char* t[] = {"Custom", "Minimum (4GB)", "Low (6GB)", "Balanced (8GB)", "High (12GB)", "Ultra (16GB+)"};
-    return t[std::min(std::max(v, 0), 5)];
+    static const char* t[] = {"Custom", "Minimum (4GB)", "Low (6GB)", "Balanced (8GB)", "High (12GB)", "Ultra (16GB+)",
+                              "Auto (this PC)"};
+    return t[std::min(std::max(v, 0), 6)];
 }
 // (hookshot) The VRAM budget row's choices: the texture and mirror budgets in MB (0: Auto, the renderer's own rule). The presets'
 // budgets are among them (preset_vram_budget), so a preset sets the row, and the row can also be chosen on its own (null and
@@ -882,7 +902,21 @@ void sync_preset_budgets(int p) {
 // 3840 x 2160 window at that preset's picture, 2048 x 1152 or the handheld profile's 1536 x 864: same frame, mean |Laplacian|
 // of the window and of the picture, on the slider's steps)
 void env_release(const int* value);   // (below: a row the environment held, set by the menu from now on)
+// (hookshot) the Quality preset "Auto (this PC)", kAutoPreset: the profile menu_auto_for_gpu chose for this PC (auto_settings.h)
+::auto_settings::Choice auto_choice;   // (tier 0: no profile yet, before the card is known)
+uint64_t auto_for = 0;               // (the fingerprint of the hardware the options' Auto settings were chosen for: auto_for=)
+uint64_t auto_fp = 0;                // (this PC's, menu_auto_for_gpu)
+uint64_t auto_tuned = 0;             // (the fingerprint the measured tuning in play finished for: auto_tuned=)
+// (the Output resolution Auto set, by its size: auto_output=<w>x<h>. Another size there is the player's; 0 x 0: unknown. Not the
+// choice's number: the choices follow the screen's modes (#2566), and a new screen is when Auto chooses again)
+struct { uint32_t w = 0, h = 0; } auto_output;
+::auto_settings::Tuning auto_tuning;   // (the measured tuning in play, menu_auto_tune; its steps kept as auto_steps=)
+void apply_auto(bool keep_own);   // (below: the Auto preset's rows)
 void apply_preset(int p) {
+    if (p == kAutoPreset) {
+        apply_auto(false);   // (chosen on the row: all of its rows, as any preset)
+        return;
+    }
     // (the rows it sets are the preset's from now on, even at the value the environment forced: save writes them)
     if (p > 0)
         for (const int* v : {&opts.resolution, &opts.upscale, &opts.sharpness, &opts.pace, &opts.realtime, &opts.handheld})
@@ -917,13 +951,57 @@ void apply_preset(int p) {
     opts.budget = p;   // (Custom chosen on this row: no budget, as before)
     sync_preset_budgets(p);
 }
+/// keep_own (Auto choosing again for new hardware): the preset-exempt rows the player set under Auto stay theirs, the Output
+/// resolution (another than the one Auto set, auto_output) and the VRAM budget row (budget 0, set_row). Mesh shaders Auto never
+/// sets (RX_VK_MESH_SHADERS), and the fingerprint has the card's mesh shaders, not this run's mode
+void apply_auto(bool keep_own) {
+    const ::auto_settings::Choice& c = auto_choice;
+    if (c.tier < 1) return;
+    const Out set = output_at(opts.output_res);
+    const bool own_output = keep_own && auto_output.w && !(set.w == auto_output.w && set.h == auto_output.h);
+    const bool own_budget = keep_own && opts.preset == kAutoPreset && opts.budget == 0;
+    const int output = opts.output_res, vram_budget = opts.vram_budget;
+    env_release(&opts.dlss);
+    opts.dlss = c.upscaler;   // (before the tier's rows: apply_preset snaps its Render resolution to this upscaler)
+    apply_preset(c.tier);   // (the tier's scaling rows and memory budgets)
+    if (c.tier == 1) opts.upscale = 0, opts.sharpness = 0;   // (the plain scale, as RX_VK_LOW_SPEC: the lightest)
+    opts.handheld = 0;   // (docked: the handheld profile gave a GTX 1050 a black picture; the Render resolution lightens the card)
+    if (c.resolution) opts.resolution = ur::snap_render(c.upscaler, c.resolution);
+    if (own_output) {
+        opts.output_res = output;
+    } else {
+        env_release(&opts.output_res);
+        // (the size Auto chose, among the menu's choices: the screen's resolutions and the common ones; a size the menu does not
+        // offer is the game's own, never the player's custom size)
+        int at = 0;
+        const std::vector<Out>& offered = outputs();
+        for (int i = 1; c.output_w && i < (int)offered.size(); i++)
+            if ((int)offered[i].w == c.output_w && (int)offered[i].h == c.output_h) at = i;
+        if (c.output_w && !at)
+            logf("vk: Auto (this PC): the screen's %dx%d is not among the Output resolution's choices: 2048x1152", c.output_w, c.output_h);
+        opts.output_res = at;
+        const Out o = output_at(at);
+        auto_output.w = o.w, auto_output.h = o.h;
+    }
+    if (own_budget) {
+        opts.budget = 0;
+        opts.vram_budget = vram_budget;
+        vram_budget_sync();
+    }
+    auto_tuned = 0;   // (chosen again: measured again in play)
+    auto_tuning = {};
+    opts.preset = kAutoPreset;   // (apply_preset set the tier's number)
+    auto_for = auto_fp;          // (chosen for this PC, whether at a start or on the menu's row)
+}
 
 MENU_HINTS(hn_preset, 0, "Each row as you set it. Changing most rows yourself comes back to Custom; the VRAM budget row keeps its value.",
            "Resolution 50% (with DLSS its nearest mode), Lanczos, Sharpness 30%, the Handheld Profile.",
            "Resolution 75% (with DLSS its nearest mode), Lanczos, Sharpness 30%, the Handheld Profile.",
            "Resolution 100% (with DLSS its nearest mode), Catmull-Rom, Sharpness 30%.",
            "Resolution 100% (with DLSS its nearest mode), Lanczos, Sharpness 40%.",
-           "Resolution 100% (with DLSS its nearest mode), Lanczos, Sharpness 50%.")
+           "Resolution 100% (with DLSS its nearest mode), Lanczos, Sharpness 50%.",
+           "Chosen for this PC from its graphics card, video memory and screen, and chosen again when they change. The log's "
+           "\"Auto (this PC)\" line says why.")
 MENU_HINTS(hn_gpu, 0, "The best dedicated GPU.")
 /// Frame generation: how many frames are made for each of the game's
 const char* hn_framegen(int v, int variant) {
@@ -1080,6 +1158,10 @@ const char* hn_astc_rgba8(int, int variant) {
     return variant <= 0 && getenv("RX_VK_ASTC_RGBA8") ? "Set by RX_VK_ASTC_RGBA8 (hookshot_env.txt or the environment): remove that line to choose here."
                                        : nullptr;
 }
+MENU_HINTS(hn_texture_detail, 0, "Full detail, but on a card with 4.5 GB or less at the Minimum preset: as Medium.",
+           "Every texture at the game's own size (the very largest still trimmed to fit).",
+           "The big textures' largest level left out above 1024 texels: about a quarter of their memory.",
+           "The big textures down to 512 texels: the least memory, the softest picture.")
 MENU_HINTS(hn_robust, 0, "On, on every card.", "Can be faster on some NVIDIA cards.", "Always on.")
 MENU_HINTS(hn_fps, 0, nullptr, "The frame rate. With frame generation on, the game's own rate too.",
            "And the game's frame time, with its 1% low: the rate of its slowest 1% of frames over the last 10 seconds.",
@@ -1116,7 +1198,7 @@ Row rows[] = {
     // Graphics, in sections: a heading row is a section's title (draw_options draws it, the selection steps over it). The
     // Quality preset first, as it sets rows in every section. (Reflex, Anti-Lag 2, the Upscaler and the DLSS model only where
     // they run here; HDR's paper white and peak brightness only with HDR on: row_shown)
-    {TAB_GRAPHICS, "Quality preset", &opts.preset, 0, 5, 1, tx_preset,
+    {TAB_GRAPHICS, "Quality preset", &opts.preset, 0, 6, 1, tx_preset,
      "Sets the scaling rows and memory limits for a GPU with that much memory. The Upscaler and Frame generation stay yours.",
      hn_preset},
     // (the picture's way, top to bottom: the output's size, what fills it from the 3D, the 3D's size, its sharpening; then
@@ -1148,10 +1230,11 @@ Row rows[] = {
      "Who makes the frames at 2x and up. NVIDIA DLSS Frame Generation needs a temporal Upscaler (DLSS, DLAA or FSR) for "
      "the scene's depth and motion. Changes at once.", hn_framegen_by, false, true},
     {TAB_GRAPHICS, "Frame pacing", &opts.pace, 0, 1, 1, tx_onoff, "When each frame is shown.", hn_pace},
-    {TAB_GRAPHICS, "Game frame rate cap", &opts.fps_cap, 0, 6, 1, tx_fps_cap,
+    {TAB_GRAPHICS, "Game frame rate cap", &opts.fps_cap, 0, 7, 1, tx_fps_cap,
      "Limits frames rendered by the game. Generated frames are additional. Takes a restart. "
-     "Past 60 is experimental: the game keeps real time, but some cutscenes and bosses can misbehave (Gohma, the intro's "
-     "narration). 60 is the safe choice. Uncapped: as fast as the PC can, still at real time; with V-Sync on, the display's "
+     "30 reduces rendering work and keeps real time even with Game speed set to Per frame. Past 60 is experimental: some "
+     "cutscenes and bosses can misbehave (Gohma, the intro's narration). 60 is the safe choice. "
+     "Uncapped: as fast as the PC can, still at real time; with V-Sync on, the display's "
      "refresh rate is the limit.",
      nullptr, true, true},
     {TAB_GRAPHICS, "NVIDIA Reflex", &opts.reflex, 0, 2, 1, tx_reflex,
@@ -1189,6 +1272,10 @@ Row rows[] = {
      "tone mapper, the same mid grey with highlights that roll off into the peak and keep their colour.",
      nullptr, false, true},
     {TAB_GRAPHICS, "Detail", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},
+    {TAB_GRAPHICS, "Texture detail", &opts.texture_detail, 0, 3, 1, tx_texture_detail,
+     "How much of the big textures (ground, walls, buildings) is kept in video memory. Lower uses less, for a softer "
+     "picture up close: for 6 and 8 GB cards that slow down after a while. Applies to textures made after the change; "
+     "a restart applies it to all.", hn_texture_detail, false, true},
     {TAB_GRAPHICS, "Anisotropic filtering", &opts.anisotropy, 0, 4, 1, tx_anisotropy,
      "Keeps textures sharp on surfaces seen at a slant, such as the ground ahead: higher is sharper in the distance, for a "
      "little GPU time. Game's is the console's own (1x or 2x).", nullptr, false, true},
@@ -1196,6 +1283,23 @@ Row rows[] = {
      "How many pixels the shadow maps have, or none at all. Fewer pixels: softer shadows, less GPU time; Off also saves their "
      "draw calls on the CPU. Applies after a restart.",
      hn_shadow_res, true, true},
+    // (LaküenRecomp handheld) costly passes a Steam Deck's GPU timing found after the shadows, left out live (Effect pass 1, and
+    // the ground fog; two more stay drawn, as walls turned white without them); and the shaders made at the start or as the game asks (the start's 18,713 programs and 25,337 pipelines
+    // held ~4 GB of a Steam Deck's 16)
+    {TAB_GRAPHICS, "Effect pass 1", &opts.effect_1, 0, 1, 1, tx_onoff,
+     "A costly pass of the game's (a 512x512 picture made now and then). Off leaves it out at once: see what changes.", nullptr,
+     false, true},
+    {TAB_GRAPHICS, "Ground fog", &opts.effect_4, 0, 1, 1, tx_onoff,
+     "The fog near the ground (a half-size pass, one of the costliest after the shadows). Off leaves it out at once.", nullptr,
+     false, true},
+    {TAB_GRAPHICS, "Effect finder", &opts.finder, 0, 1, 1, tx_onoff,
+     "Times the game's passes on the GPU and ranks them, for the two rows below: pick a pass, turn it off, see what is gone. "
+     "Each change goes into the log for the report. Costs a little GPU time; applies after a restart.", nullptr, true, true},
+    {TAB_GRAPHICS, "Finder pass", &opts.finder_pick, 1, 20, 1, tx_finder_pick,
+     "The pass by its GPU cost, most first (rank, GPU time a frame, draws a frame). The ranking holds while it is off.", nullptr,
+     false, true},
+    {TAB_GRAPHICS, "Finder pass drawn", &opts.finder_draw, 0, 1, 1, tx_onoff,
+     "Off leaves the pass picked above out at once.", nullptr, false, true},
     // (the rows to change when something is wrong, or on a card short of memory: last)
     {TAB_GRAPHICS, "GPU and memory", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},
     {TAB_GRAPHICS, "GPU device", &opts.gpu_device, 0, 8, 1, tx_gpu,
@@ -1245,7 +1349,7 @@ Row rows[] = {
      "Skips the new-game opening (the story movie and Navi waking Link) and leaves later cutscenes, the Deku Tree "
      "meeting, and the title screen alone.", nullptr, false, true},
 
-    // Controls (12 rows; Motion opens the 6 TAB_MOTION rows, Controls its page with the 2 TAB_PAGE rows)
+    // Controls (13 rows; Motion opens the 6 TAB_MOTION rows, Controls its page with the 2 TAB_PAGE rows)
     {TAB_CONTROLS, "Controller in background", &opts.pad_background, 0, 1, 1, tx_onoff,
      "Whether the controller plays the game while another window has the focus.", hn_background, false, true},
     {TAB_CONTROLS, "Mouse camera", &opts.mouse_native, 0, 1, 1, tx_mousecam, "How the captured mouse turns the camera.",
@@ -1269,6 +1373,9 @@ Row rows[] = {
      "How far a stick moves from center in any direction before the game sees it. "
      "Lower for a precise stick, higher for one that drifts. "
      "The game's own dead zone still follows.", nullptr, false, true},
+    {TAB_CONTROLS, "Auto run", &opts.auto_run, 0, 1, 1, tx_auto_run,
+     "Sprint without holding A (or its key). Hold it until Link sprints, then let go: he keeps going. Let go of the "
+     "stick or the movement keys, or tap A again, to stop.", nullptr, false, true},
     {TAB_CONTROLS, "Rumble strength", &opts.rumble, 0, 150, 25, tx_rumble,
      "How strongly the controller rumbles, in percent of the game's rumble. Off turns it off.", nullptr, false, true},
     {TAB_MOTION, "Motion controls", &opts.gyro, 0, 1, 1, tx_gyro,
@@ -1827,8 +1934,9 @@ void save() {
             const char* eq = strchr(line, '=');
             if (!eq || eq == line) continue;
             const std::string key(line, (size_t)(eq - line));
-            // (memory_budget too: save() writes it, and the file's old line, kept after it, won at the next start)
-            bool mine = key == "microphone_device" || key == "options_version" || key == "memory_budget";
+            // (memory_budget and auto_for too: save() writes them, and the file's old line, kept after it, won at the next start)
+            bool mine = key == "microphone_device" || key == "options_version" || key == "memory_budget" || key == "auto_for" ||
+                        key == "auto_tuned" || key == "auto_output" || key == "auto_steps";
             // (and the Mesh shaders row's line, no longer read (gpu/vk/mesh_mode.h): dropped, not kept for nothing)
             mine |= key == "mesh_shaders";
             for (const Row& r : rows)
@@ -1837,7 +1945,21 @@ void save() {
         }
         fclose(f);
     }
-    if (FILE* f = fopen(ini_path().c_str(), "w")) {
+    // (written to a part file beside it, then moved over it in one step: a write that fails, on a full disk, leaves the options as
+    // they were, where "w" on the file itself emptied it first. A link's target is written, as fopen did; a link whose target
+    // cannot be named here, one to a file not made yet or any on Windows, is written through as before, so it stays a link)
+    std::string path = ini_path();
+    bool through = false;
+#ifdef _WIN32
+    const DWORD attrs = GetFileAttributesA(path.c_str());
+    through = attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+    struct stat st;
+    if (char* real = realpath(path.c_str(), nullptr)) path = real, free(real);
+    else through = lstat(path.c_str(), &st) == 0 && S_ISLNK(st.st_mode);
+#endif
+    const std::string part = through ? path : path + ".new";
+    if (FILE* f = fopen(part.c_str(), "w")) {
         for (const Row& r : rows) {
             if (r.value == &opts.output_res) {   // (the size itself: host/nn_applet.c reads it)
                 const int v = saved_value(r.value);
@@ -1856,6 +1978,12 @@ void save() {
         // (not a row: the budgets Custom keeps. 0 too: with a preset on, the VRAM budget row chosen by the player, which the next
         // start must not take back to the preset's)
         fprintf(f, "memory_budget=%d\n", opts.budget);
+        if (auto_for) fprintf(f, "auto_for=%016llx\n", (unsigned long long)auto_for);   // (the hardware Auto (this PC) chose for)
+        if (auto_tuned) fprintf(f, "auto_tuned=%016llx\n", (unsigned long long)auto_tuned);   // (and measured in play for)
+        if (auto_for && auto_output.w)   // (the Output resolution Auto set, by its size)
+            fprintf(f, "auto_output=%ux%u\n", (unsigned)auto_output.w, (unsigned)auto_output.h);
+        // (the tuning's steps so far and whether one went down: the no-seesaw rule and the two steps hold across restarts)
+        if (auto_for && auto_tuning.steps) fprintf(f, "auto_steps=%d,%d\n", auto_tuning.steps, auto_tuning.went_down ? 1 : 0);
         // (2: game_speed below 2 was only ever the old default, see menu_init; 3: the mouse's buttons are bindings, see
         // host/nn_hid.c binds_load; 4: Descriptor reuse on by default, see menu_init and vk_draw.cpp desc_slotgen_on; 5: the
         // Menu shortcut "Insert, F1 or Esc" by default, see menu_init; 6: the Aspect ratio's 16:9 from before moves on a
@@ -1872,7 +2000,19 @@ void save() {
             }
             fprintf(f, "key_%s=%d,%d\n", bind_names[i], host->binding(HOS_BIND_KEY, i, 0), host->binding(HOS_BIND_KEY, i, 1));
         }
-        fclose(f);
+        bool ok = !ferror(f);
+        ok = fclose(f) == 0 && ok;
+#ifdef _WIN32
+        ok = ok && (through || MoveFileExA(part.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING));
+#else
+        ok = ok && (through || rename(part.c_str(), path.c_str()) == 0);
+#endif
+        if (!ok && through) {
+            logf("menu: hookshot_options.ini could not be written");
+        } else if (!ok) {
+            remove(part.c_str());
+            logf("menu: hookshot_options.ini could not be written: the options are as they were");
+        }
     }
 }
 
@@ -2353,11 +2493,19 @@ const Control controls[] = {{HOS_SW_A, "A"}, {HOS_SW_B, "B"}, {HOS_SW_X, "X"}, {
 constexpr int kControls = sizeof controls / sizeof controls[0];   // (then "Reset to defaults")
 // (the stick's and camera's directions: keys only; the ocarina's note rows take a gamepad input too, host/nn_hid.c)
 bool keys_only(int i) { return i < kControls && controls[i].button >= HOS_KEY_MOVE_UP && controls[i].button <= HOS_KEY_CAM_RIGHT; }
+// a row takes the touchpad click as its Input 1 or Input 2: then the click is that row's, not the menu's
+bool touchpad_bound() {
+    for (int i = 0; host && host->binding && i < kControls; i++)
+        for (int slot = 0; slot < 2 && !keys_only(i); slot++)
+            if (host->binding(HOS_BIND_PAD, controls[i].button, slot) == HOS_PAD_TOUCHPAD) return true;
+    return false;
+}
 // a pad input's name on the controller of the button prompts (the Button prompts row's choice; Auto: the face in use),
 // else by its place
 const char* pad_name(int p) {
     if (p < 0 || p >= HOS_PAD_N) return "None";
     static const char* paddles[] = {"R4", "L4", "R5", "L5"};
+    if (p == HOS_PAD_TOUCHPAD) return "Touchpad";
     if (p >= HOS_PAD_RPADDLE1) return paddles[p - HOS_PAD_RPADDLE1];
     static const char* t[HOS_PROMPT_KEYBOARD + 1][HOS_PAD_RPADDLE1] = {   // (by place, then HOS_PROMPT_*; the keyboard's: by place)
         {"Bottom button", "Right button", "Left button", "Top button", "Select / Back", "Home", "Start", "L stick press",
@@ -2445,11 +2593,9 @@ const int kTop = tab_row_count(TAB_PAGE);   // (Layout preset and Button prompts
 int listening = 0;     // waiting for the new input: 1 a gamepad's, 2 a key
 bool listen_armed = false;   // (once what started it was let go)
 int64_t listen_end = 0;
-std::string keys_text(int button) {
-    const int a = host->binding(HOS_BIND_KEY, button, 0), b = host->binding(HOS_BIND_KEY, button, 1);
-    std::string t = a ? key_name(a) : "";
-    if (b) t += std::string(a ? ", " : "") + key_name(b);
-    return t.empty() ? "None" : t;
+std::string key_text(int button, int slot) {
+    const int k = host->binding(HOS_BIND_KEY, button, slot);
+    return k ? key_name(k) : "None";
 }
 
 // ---- what is drawn: Dear ImGui over the window's image (vk_imgui.h) in the game's own style (vk_ui.h). Built anew at each
@@ -3012,6 +3158,10 @@ void draw_options(ui::Ctx& c) {
         std::string ver = std::string("Lak\xC3\xBC" "enRecomp ") + HOOKSHOT_VERSION;   // (the fork's name)
         const float room = (c.w - total) * 0.5f - 60 * s - c.safe, px = 15 * s;
         const auto width = [&](float p) { return ui::size_of(c.f.body, p, ver.c_str()).x; };
+        // (LaküenRecomp: says what it is beside the version while there is room; it goes first when there is not)
+        const std::string bare = ver;
+        ver += " \xC2\xB7 own tuned fork of Hookshot";
+        if (width(px) > room) ver = bare;
         if (width(px) > room && ver.find(" (") != std::string::npos) ver.resize(ver.find(" ("));
         // (still too long, as a source build's "v2.0.11-821-g7b81752-dirty" since the Audio tab: at Small and Medium smaller
         // until it fits, on half-point steps, 10 points at the least; at Large, the size for a TV across the room, at its size
@@ -3201,12 +3351,17 @@ void draw_controls(ui::Ctx& c) {
                  hh + 18 * s, bar_top - 12 * s);
     }
     const float rx0 = cx0 + 44 * s, rx1 = cx1 - 44 * s, width = rx1 - rx0;
-    const float pad_x = rx0 + width * 0.32f, key_x = rx0 + width * 0.75f;
-    const float col_x[] = {pad_x, (pad_x + key_x) * 0.5f, key_x, rx1};
+    // (the names narrower than with one key column; each key cell as wide as a long key name needs, "Right click" chosen,
+    // within a sixth and a fifth of the row; the gamepad cells share the rest: at Small and Medium as wide as with one key
+    // column, at Large cut as they were)
+    const float key_w = std::clamp(ui::size_of(c.f.strong, 18 * s, "Right click").x + 30 * s, width * 0.16f, width * 0.2f);
+    const float pad_x = rx0 + width * 0.26f, key_x = rx1 - 2 * key_w;
+    const float col_x[] = {pad_x, (pad_x + key_x) * 0.5f, key_x, key_x + key_w, rx1};
     float top = hh + 22 * s;
     ui::text_mid_centre(c, c.f.body, 15 * s, col_x[kCtlAlternate], top + 8 * s, ui::kDim, "Gamepad");
+    ui::text_mid_centre(c, c.f.body, 15 * s, col_x[kCtlKeyboard2], top + 8 * s, ui::kDim, "Keyboard");
     ui::text_mid(c, c.f.body, 15 * s, rx0 + 20 * s, top + 27 * s, ui::kDim, "Button");
-    const char* titles[kCtlColumns] = {"Input 1", "Input 2", "Keyboard"};
+    const char* titles[kCtlColumns] = {"Input 1", "Input 2", "Key 1", "Key 2"};
     for (int col = kCtlPrimary; col < kCtlColumns; col++)
         ui::text_mid_centre(c, c.f.body, 15 * s, (col_x[col] + col_x[col + 1]) * 0.5f, top + 27 * s, ui::kDim, titles[col]);
     top += 43 * s;
@@ -3240,10 +3395,12 @@ void draw_controls(ui::Ctx& c) {
         hits.add(rx0, y0, pad_x, y1, menu_hit::kCtlRow, i);
         const bool keys = keys_only(i);
         for (int col = kCtlPrimary; col < kCtlColumns; col++) {
-            const bool keyboard = col == kCtlKeyboard, disabled = keys && !keyboard;
-            const float a = col_x[col] + (col == kCtlPrimary ? 0 : 3 * s), b = col_x[col + 1] - (keyboard ? 0 : 3 * s);
-            const std::string v = keyboard ? keys_text(ctl.button) : disabled ? "-" : pad_name(host->binding(HOS_BIND_PAD, ctl.button, col));
-            const bool here = sel && col == (keys ? kCtlKeyboard : ccol);
+            const bool keyboard = col >= kCtlKeyboard, disabled = keys && !keyboard;
+            const float a = col_x[col] + (col == kCtlPrimary ? 0 : 3 * s), b = col_x[col + 1] - (col == kCtlColumns - 1 ? 0 : 3 * s);
+            const std::string v = keyboard   ? key_text(ctl.button, menu_hit::ctl_key_slot(col))
+                                  : disabled ? "-"
+                                             : pad_name(host->binding(HOS_BIND_PAD, ctl.button, col));
+            const bool here = sel && col == menu_hit::ctl_column(ccol, keys);
             const ImVec2 va(a, y), vb(b, y + rh);
             if (here && listening) {   // (waiting for the new input: amber, the outline as a selected value's)
                 const float in = 4 * s;
@@ -3981,7 +4138,7 @@ void startup_screen(const StartupView* view) {
     probe_upscalers_soon();
 }
 
-static bool first_start = false;   // (menu_init: no options file yet. menu_first_start_for_gpu picks the preset for the card)
+static bool first_start = false;   // (menu_init: no options file yet. menu_auto_for_gpu picks the preset for the card)
 void menu_init() {
     static bool done;
     if (done) return;
@@ -4018,6 +4175,17 @@ void menu_init() {
             if (!strcmp(line, "options_version")) version = atoi(eq + 1);
             if (!strcmp(line, "dynamic_resolution")) old_dynres = atoi(eq + 1);
             if (!strcmp(line, "menu_size") && atoi(eq + 1) == 0) menu_auto = true;
+            if (!strcmp(line, "auto_for")) auto_for = strtoull(eq + 1, nullptr, 16);
+            if (!strcmp(line, "auto_tuned")) auto_tuned = strtoull(eq + 1, nullptr, 16);
+            if (!strcmp(line, "auto_output")) {   // (<w>x<h>; a number from before is unknown: 0 x 0)
+                unsigned w = 0, h = 0;
+                if (sscanf(eq + 1, "%ux%u", &w, &h) == 2) auto_output.w = w, auto_output.h = h;
+            }
+            if (!strcmp(line, "auto_steps")) {
+                int steps = 0, down = 0;
+                if (sscanf(eq + 1, "%d,%d", &steps, &down) == 2)
+                    auto_tuning.steps = std::max(steps, 0), auto_tuning.went_down = down != 0;
+            }
             if (!strcmp(line, "memory_budget")) opts.budget = std::min(std::max(atoi(eq + 1), 0), 5), has_memory_budget = true;
             has_vram_budget |= !strcmp(line, "vram_budget");
             if (!strcmp(line, "microphone_device")) {   // (hookshot: the microphone, by its name)
@@ -4065,6 +4233,7 @@ void menu_init() {
         opts.sharpness = 0;
     }
     if (opts.preset > 0 && !has_memory_budget) opts.budget = opts.preset;   // (a file from before memory_budget: its preset's)
+    if (opts.preset == kAutoPreset && !has_memory_budget) opts.budget = 0;   // (Auto: its tier's, menu_auto_for_gpu)
     if (!has_vram_budget) opts.vram_budget = preset_vram_budget(opts.budget);   // (a file from before the row)
     vram_budget_sync();
     fps_cap_started = opts.fps_cap;   // (the FPS counter's graph: the cap applies from the start, host/nn_vi.c)
@@ -4088,20 +4257,11 @@ void menu_init() {
     restart_init();   // (what this run started with: the rows that take a restart differ from it once changed)
 }
 
-/// (hookshot) The first start (no options file yet), once the card is chosen: the Quality preset for its memory, so an older or
-/// smaller card does not start at the docked 2048 x 1152 with the full-size memory budget. A GTX 1050 (4 GB) lost the device at
-/// the first scene that way (Discord 2026-11-10); the Minimum preset's handheld picture and budget are what such cards run.
-/// An integrated GPU or a card of up to 4.5 GB: Minimum, with the plain scale (as RX_VK_LOW_SPEC=1); up to 6.5 GB: Low; larger:
-/// the defaults, as before. Docked either way (the handheld profile gave a GTX 1050 a black picture). Options already saved are never changed. RX_VK_AUTO_PRESET=0: off
 /// (LaküenRecomp) A dedicated card of up to 8.5 GB (an 8 GB RX 6600 XT): Render resolution 75 % instead of Auto. Auto follows the
 /// game's dynamic size, which since v0.2.0 stays at the full output: on the 6600 XT the 3D went from 1440x810 to 1920x1080, the
 /// render targets took the textures' room, and the texture cache churned again (20-24 fps against 30-60 at 75 %)
-static bool small_dedicated_card(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
-    if (props.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) return false;
-    uint64_t vram = 0;
-    for (uint32_t i = 0; i < mem.memoryHeapCount; i++)
-        if (mem.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) vram = std::max<uint64_t>(vram, mem.memoryHeaps[i].size);
-    return vram && vram <= (8704ull << 20);
+static bool small_dedicated_card(const VkPhysicalDeviceProperties& props, uint32_t vram_mb) {
+    return props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && vram_mb && vram_mb <= 8704;
 }
 
 /// (LaküenRecomp) Once, for options kept by an update: Auto on such a card becomes 75 %. A marker file beside
@@ -4122,8 +4282,8 @@ static void small_card_output_once(const VkPhysicalDeviceProperties& props) {
          "(LAKUEN_SMALL_VRAM_OUTPUT=0: leave the options)", props.deviceName);
 }
 
-static void small_card_resolution_once(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
-    if (!small_dedicated_card(props, mem)) return;
+static void small_card_resolution_once(const VkPhysicalDeviceProperties& props, uint32_t vram_mb) {
+    if (!small_dedicated_card(props, vram_mb)) return;
     small_card_output_once(props);
     if (!env_int("LAKUEN_SMALL_VRAM_RES", 1) || env_holds(&opts.resolution) || opts.resolution != 0) return;
     const std::string marker = ini_path() + ".small_vram_res";
@@ -4189,56 +4349,50 @@ static void handheld_resolution_once(const VkPhysicalDeviceProperties& props) {
          "(LAKUEN_HANDHELD_RES=0: leave the options)", props.deviceName, upscaler_rows::percent(opts.resolution));
 }
 
-void menu_first_start_for_gpu(const VkPhysicalDeviceProperties& props, const VkPhysicalDeviceMemoryProperties& mem) {
-    if (!first_start) {   // (options kept by an update: the one-time fixes for this device, each its own marker)
-        small_card_resolution_once(props, mem);
-        handheld_resolution_once(props);
-        return;
-    }
+/// (hookshot) The Quality preset "Auto (this PC)", once the card is chosen (vk_main.cpp pick_device): the profile auto_settings.h
+/// picks from the hardware. A first start (no options file yet) starts on it. With Auto on, the profile is applied when the
+/// hardware it was chosen for changes (another card, its memory, the screen's size, a build with or without DLSS or FSR 4):
+/// the fingerprint is kept in the options file (auto_for=). Changing a row yourself comes back to Custom, and then nothing here
+/// touches the settings; the rows no preset sets (the Output resolution, the VRAM budget) leave it on Auto, and
+/// what the player set on them is kept when Auto chooses again (apply_auto keep_own). Before Auto, a first start chose Minimum or Low by the card's memory alone: an older or smaller card no
+/// longer starts at the docked 2048 x 1152 with the full-size budget (a GTX 1050 lost the device at the first scene that way,
+/// Discord 2026-11-10). RX_VK_AUTO_PRESET=0: a first start keeps the defaults, as before Auto.
+/// RX_VK_AUTO_PRESET_VRAM_MB=<n>: the card's memory taken as n MB, to try the choice for a smaller or larger card
+void menu_auto_for_gpu(const VkPhysicalDeviceProperties& props, ::auto_settings::Hardware hw) {
+    const bool first = first_start;
     first_start = false;
-    if (!env_int("RX_VK_AUTO_PRESET", 1)) return;
-    if (env_on("RX_VK_LOW_SPEC")) return;   // (chosen already, menu_init)
-    uint64_t vram = 0;
-    for (uint32_t i = 0; i < mem.memoryHeapCount; i++)
-        if (mem.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) vram = std::max<uint64_t>(vram, mem.memoryHeaps[i].size);
-    const bool integrated = props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-    // (RX_VK_AUTO_PRESET_VRAM_MB=<n>: the card's memory taken as n MB, to try the choice on a larger card)
-    const uint64_t mb = getenv("RX_VK_AUTO_PRESET_VRAM_MB") ? (uint64_t)atoll(getenv("RX_VK_AUTO_PRESET_VRAM_MB")) : vram >> 20;
-    const int preset = integrated || mb <= 4608 ? 1 : mb <= 6656 ? 2 : 0;
-    if (!preset) {
-        // (LaküenRecomp) the defaults, but a card of up to 8.5 GB starts at Render resolution 75 % (small_dedicated_card)
-        if (small_dedicated_card(props, mem) && env_int("LAKUEN_SMALL_VRAM_RES", 1) && !env_holds(&opts.resolution)) {
-            opts.resolution = 2;
-            if (env_int("LAKUEN_SMALL_VRAM_OUTPUT", 1) && !env_holds(&opts.output_res) && opts.output_res == 0) opts.output_res = 3;
-            save();
-            logf("vk: first start on %s (%llu MB of VRAM): Render resolution 75 %%", props.deviceName, (unsigned long long)mb);
-        }
+    // (LaküenRecomp) options kept by an update: the one-time fixes for this device first, each its own marker (a small card's
+    // output and resolution, a handheld's profile and resolution). The builder's device profile is written before the game's
+    // first start, so a handheld or a small card reaches here with options and the profile's values, which Auto leaves alone
+    if (!first) {
+        small_card_resolution_once(props, hw.vram_mb);
+        handheld_resolution_once(props);
+    }
+    if (const char* e = getenv("RX_VK_AUTO_PRESET_VRAM_MB")) hw.vram_mb = (uint32_t)atoll(e);
+    auto_choice = ::auto_settings::choose(hw);
+    const uint64_t fp = auto_fp = ::auto_settings::fingerprint(hw, props.vendorID, props.deviceID);
+    if (first && (!env_int("RX_VK_AUTO_PRESET", 1) || env_on("RX_VK_LOW_SPEC"))) return;   // (off, or chosen already: menu_init)
+    char hw_line[200];
+    snprintf(hw_line, sizeof hw_line, "%s, %u MB of video memory, %s, screen %dx%d at %d Hz, %u MB of RAM, %d threads",
+             props.deviceName, (unsigned)hw.vram_mb, hw.integrated ? "integrated" : "dedicated", hw.screen_w, hw.screen_h,
+             hw.refresh_hz, (unsigned)hw.ram_mb, hw.threads);
+    if (first) opts.preset = kAutoPreset;
+    if (opts.preset != kAutoPreset) {
+        logf("vk: Auto (this PC) would be: %s (%s)", auto_choice.why, hw_line);   // (for a bug report: what Auto would choose)
         return;
     }
-    opts.preset = opts.budget = preset;
-    apply_preset(preset);
-    sync_preset_budgets(preset);
-    if (preset == 1) opts.upscale = 0, opts.sharpness = 0;
-    // (docked kept: the presets' handheld profile is what a player chooses; on the GTX 1050 above it gave a black picture.
-    // The Render resolution and the memory budget are what lighten the card)
-    opts.handheld = 0;
-    // (handheld-rdna2) An AMD integrated GPU (Steam Deck, Legion Go S, ROG Ally): the handheld profile. On a Steam Deck it took
-    // a settled room from ~15 to ~19.5 fps (Hookshot-SteamDeck, H1). RX_VK_AUTO_HANDHELD=0: docked, as on other GPUs
-    if (integrated && props.vendorID == 0x1002 && !(getenv("RX_VK_AUTO_HANDHELD") && atoi(getenv("RX_VK_AUTO_HANDHELD")) == 0)) {
-        opts.handheld = 1;
-        // (LaküenRecomp) and no frame generation: a Steam Deck ran ~20 fps short of CPU, where made frames only add GPU work out of
-        // the same power budget and their lag
-        opts.framegen = 0;
-        // (LaküenRecomp handheld) the device's Render resolution: the Legion Go S's larger GPU takes 67 %, the Deck keeps 50 %
-        opts.resolution = handheld_resolution_for(props.deviceName);
+    if (fp == auto_for) {
+        logf("vk: Auto (this PC): the settings chosen for this PC before (%s)", hw_line);
+        return;
     }
-    restart_init();   // (what this run starts with)
-    save();   // (host/nn_applet.c reads handheld_profile from the file when the game first asks its mode, after this)
-    logf("vk: first start on %s (%s, %llu MB of VRAM): the %s preset", props.deviceName, integrated ? "integrated" : "dedicated",
-         (unsigned long long)mb, tx_preset(preset));
+    apply_auto(!first);   // (the hardware changed: the Output resolution and VRAM budget the player set stay theirs)
+    restart_init();   // (what this run starts with: the Output resolution applies at the next start, unless this is the first)
+    save();   // (host/nn_applet.c reads handheld_profile and output_res from the file when the game first asks its mode, after this)
+    logf("vk: Auto (this PC): %s: %s (%s)", first ? "first start" : "the hardware changed", auto_choice.why, hw_line);
 }
 
-int menu_vsync() { return env_on("RX_VK_FIFO") ? 1 : env_on("RX_VK_IMMEDIATE") ? 2 : opts.vsync; }
+// (the switches read once, at the first present: they are for the whole run, and each present asked twice)
+int menu_vsync() { static const int run = env_on("RX_VK_FIFO") ? 1 : env_on("RX_VK_IMMEDIATE") ? 2 : 0; return run ? run : opts.vsync; }
 bool resolution_auto() { return opts.resolution == 0; }
 float shadow_resolution_factor() {   // (the value the game started with: textures made since keep one size)
     // (LaküenRecomp: Game, Medium 1/2, Low 1/3, Very low 1/4; Off draws none, menu_shadows_off, at the game's size)
@@ -4247,6 +4401,51 @@ float shadow_resolution_factor() {   // (the value the game started with: textur
         return k[std::clamp(opts.shadow_res, 0, 4)];
     }();
     return f;
+}
+bool menu_effect_off(uint64_t key) {   // (LaküenRecomp: the Effect pass rows and the Effect finder, live)
+    if (finder_on()) {
+        // (the pick: its key from the ranking, a change logged once with the time for the report)
+        static std::atomic<int> last{-1};
+        const int sig = opts.finder_pick * 2 + (opts.finder_draw ? 1 : 0);
+        static std::atomic<uint64_t> picked{0};
+        if (last.exchange(sig) != sig) {
+            uint64_t k = 0;
+            double ms = 0, draws = 0;
+            const bool have = finder_entry(opts.finder_pick - 1, &k, &ms, &draws);
+            picked = have ? k : 0;
+            finder_freeze(!opts.finder_draw);
+            const time_t now = time(nullptr);
+            tm t{};
+#ifdef _WIN32
+            localtime_s(&t, &now);
+#else
+            localtime_r(&now, &t);
+#endif
+            char when[16];
+            strftime(when, sizeof when, "%H:%M:%S", &t);
+            logf("lakuen-finder: %s #%d %016llx (%.2f ms, %.0f draws) %s", when, opts.finder_pick, (unsigned long long)k, ms, draws,
+                 opts.finder_draw ? "drawn" : "LEFT OUT");
+        }
+        if (!opts.finder_draw && key && key == picked.load(std::memory_order_relaxed)) return true;
+    }
+    switch (key) {
+    case 0xe40dc98fca54ad01ULL: return !opts.effect_1;
+    // (0x701ae221d88b2908 and 0xc587820ce7551a01, once Effect pass 2 and 3, are always drawn: without them walls and textures
+    // turned white)
+    case 0xda7a7ab28b8e73d9ULL: return !opts.effect_4;
+    default: return false;
+    }
+}
+int menu_file_int(const char* key, int def) {   // (LaküenRecomp: the file as written, the menu not loaded yet)
+    int v = def;
+    const size_t n = strlen(key);
+    if (FILE* f = fopen(ini_path().c_str(), "r")) {
+        char line[256];
+        while (fgets(line, sizeof line, f))
+            if (!strncmp(line, key, n) && line[n] == '=') v = atoi(line + n + 1);
+        fclose(f);
+    }
+    return v;
 }
 bool menu_shadows_off() {   // (LaküenRecomp: the Shadow quality row at Off, as the game started)
     static const bool v = opts.shadow_res == 4;
@@ -4427,6 +4626,71 @@ bool walk_to(State state, At at, Step step, int limit) {
     }
     for (int k = 0; k < limit && state() != start; k++) step(1);   // (back where it was: an end-stopped row is at its first)
     return false;
+}
+
+/// (hookshot) The Quality preset Auto (this PC)'s measured tuning in play (auto_settings.h tune): each of the replay's 120-present
+/// windows (vk_replay.cpp), the Render resolution one step lighter while frames are missed with the GPU over 90% of the cap's
+/// frame time, or one heavier while the cap holds with the GPU under 50%, up to the best mode that still upscales (never
+/// native); at most two steps (kept across restarts, auto_steps=), then done for this PC (auto_tuned=). The CPU holding the
+/// frame rate ends it for this run only. Not with Frame generation on (the frames shown are not the game's) nor with another
+/// preset. RX_VK_AUTO_TUNE=0: off. Before the tuning, in play (the upscaler has run, NGX has answered): the Render resolution for
+/// the upscaler that runs, when it is not the one Auto chose (auto_settings.h resolution_for)
+void menu_auto_tune(double gpu_ms, double draws, double fps) {
+    static const bool on = env_int("RX_VK_AUTO_TUNE", 1) != 0;
+    ::auto_settings::Tuning& tuning = auto_tuning;
+    std::lock_guard lk(menu_mu);
+    if (opts.preset != kAutoPreset || !auto_for) return;
+    if (draws >= 150) {
+        const ::auto_settings::Choice& c = auto_choice;
+        const int u = upscaler(), v = opts.resolution;
+        const int to = ::auto_settings::resolution_for(c, ur::engine(u), v, c.resolution ? ur::snap_render(c.upscaler, c.resolution) : 0);
+        if (to && ur::snap_render(u, to) != v) {
+            opts.resolution = ur::snap_render(u, to);
+            env_release(&opts.resolution);
+            samplers_changed();
+            menu_refresh = true;
+            tuning.n = 0;   // (the windows gathered were at the other share)
+            static const char* const name[ur::kUpscalers] = {"the game's own", "DLSS", "DLAA", "FSR 3.1", "FSR 4", "FSR 4", "Off"};
+            logf("vk: Auto (this PC): %s runs, not the %s chosen: Render resolution %d%% -> %d%%",
+                 name[std::clamp(u, 0, ur::kUpscalers - 1)], name[std::clamp(c.upscaler, 0, ur::kUpscalers - 1)], ur::percent(v),
+                 ur::percent(opts.resolution));
+            save();
+            return;
+        }
+    }
+    if (!on || auto_tuned == auto_for || opts.framegen || tuning.done) return;
+    // (the frame time the game runs to: the cap it started with, HOS_FPS_MAX over it, or the display's refresh with V-Sync On;
+    // as the FPS counter's line. Uncapped without V-Sync: the display's refresh, else 60)
+    const double target = fps_target_ms();
+    const int refresh = (display_refresh_mhz() + 500) / 1000;
+    const float cap = target > 0 ? (float)(1000.0 / target) : refresh > 0 ? (float)refresh : 60.0f;
+    const int u = upscaler(), v = opts.resolution;
+    if (ur::full_scale(u) || v == 0) return;   // (Native, or Auto's dynamic share: no steps to measure along)
+    // (heavier: up to the best mode that still upscales, past what the profile chose; never native: auto_settings.h best_step)
+    const int ceiling = ::auto_settings::best_step(u);
+    const int lighter = ur::step(u, v, 1), heavier = ur::step(u, v, -1);
+    const bool can_lighter = lighter != 0 && ur::percent(lighter) < ur::percent(v);
+    const bool can_heavier = heavier != 0 && ur::percent(heavier) > ur::percent(v) && ur::percent(heavier) <= ur::percent(ceiling);
+    const auto verdict = ::auto_settings::tune(tuning, (float)gpu_ms, (float)draws, (float)fps, cap, can_lighter, can_heavier);
+    if (verdict == ::auto_settings::WAIT) return;
+    if (verdict == ::auto_settings::LIGHTER || verdict == ::auto_settings::HEAVIER) {
+        opts.resolution = verdict == ::auto_settings::LIGHTER ? lighter : heavier;
+        env_release(&opts.resolution);
+        samplers_changed();   // (the upscalers' texture LOD bias follows the 3D's share, as when the row is set)
+        menu_refresh = true;
+        logf("vk: Auto (this PC), measured in play: %.0f fps of %.0f, the GPU at %.1f ms a frame of %.1f: Render resolution %d%% -> "
+             "%d%%", tuning.fps_mid, cap, tuning.gpu_mid, 1000.0 / cap, ur::percent(v), ur::percent(opts.resolution));
+    } else if (verdict == ::auto_settings::CPU_BOUND) {
+        // (this run only: early in play pipelines may still be compiling and textures streaming in; the next start measures again)
+        logf("vk: Auto (this PC), measured in play: the CPU holds the frame rate (%.0f fps of %.0f, the GPU at %.1f ms a frame of "
+             "%.1f): Render resolution %d%% kept for this run", tuning.fps_mid, cap, tuning.gpu_mid, 1000.0 / cap, ur::percent(v));
+        return;
+    } else {
+        auto_tuned = auto_for;
+        logf("vk: Auto (this PC), measured in play: settled (%.0f fps of %.0f, the GPU at %.1f ms a frame of %.1f): Render resolution "
+             "%d%% kept", tuning.fps_mid, cap, tuning.gpu_mid, 1000.0 / cap, ur::percent(v));
+    }
+    save();   // (after a step too: its steps, auto_steps=, so a restart before the next verdict keeps the no-seesaw rule)
 }
 
 /// The settings row whose ini key is key, set to value as the menu's Left and Right set it (set_row: cut to its range, the
@@ -4633,7 +4897,40 @@ void outputs_follow_screen() {
          dm::ratio_name({sw, sh}).c_str(), added);
 }
 
+// (LaküenRecomp) The time played: lakuen_playtime.txt beside hookshot_options.ini holds the seconds, added each minute the game
+// runs (a gap over two minutes, a suspended device, counts as one), for the builder's launcher page. LAKUEN_PLAYTIME=0: not kept
+static void playtime_tick() {
+    using clock = std::chrono::steady_clock;
+    static const bool on = [] {
+        const char* e = getenv("LAKUEN_PLAYTIME");
+        return !(e && e[0] == '0');
+    }();
+    if (!on) return;
+    static clock::time_point last = clock::now();
+    const auto now = clock::now();
+    const long long gone = std::chrono::duration_cast<std::chrono::seconds>(now - last).count();
+    if (gone < 60) return;
+    last = now;
+    std::string path = ini_path();
+    const size_t slash = path.find_last_of("/\\");
+    path = (slash == std::string::npos ? std::string() : path.substr(0, slash + 1)) + "lakuen_playtime.txt";
+    long long total = 0;
+    if (FILE* f = fopen(path.c_str(), "r")) {
+        if (fscanf(f, "%lld", &total) != 1) total = 0;
+        fclose(f);
+    }
+    total += gone > 120 ? 60 : gone;
+    const std::string tmp = path + ".tmp";
+    if (FILE* f = fopen(tmp.c_str(), "w")) {
+        fprintf(f, "%lld\n", total);
+        fclose(f);
+        remove(path.c_str());
+        rename(tmp.c_str(), path.c_str());
+    }
+}
+
 void menu_tick() {
+    playtime_tick();
     std::lock_guard lk(menu_mu);   // (the control bridge's settings: menu_setting_set)
     share_finish();   // (Save my pipeline list's worker, done)
     fullscreen_tick();
@@ -4698,8 +4995,9 @@ void menu_tick() {
         if (force) pad_last = !strcmp(force, "pad");
     }
     auto pad = [&](int p) { return listening != 1 && (pad_press >> p & 1) != 0; };
-    // (hookshot) a DualShock 4's or DualSense's touchpad click is F1: it opens and closes the menu as the key does
-    if (pad(HOS_PAD_TOUCHPAD)) press[6] = true;
+    // (hookshot) a DualShock 4's or DualSense's touchpad click is F1, while no row of the Controls page takes it: it opens and
+    // closes the menu as the key does
+    if (pad(HOS_PAD_TOUCHPAD) && !touchpad_bound()) press[6] = true;
     if (host && host->binding)   // (A and B as bound now: the Controls page or the Layout preset can change them)
         menu_keys::confirm_back(host->binding(HOS_BIND_PAD, HOS_SW_A, 0), host->binding(HOS_BIND_PAD, HOS_SW_B, 0), &pad_confirm,
                                 &pad_back);
@@ -4819,7 +5117,7 @@ void menu_tick() {
             if (press[5] || prof_now() > listen_end) listening = 0, changed = true;   // (Esc, or nothing for a while)
             else if (listening == 1) {
                 if (!listen_armed) listen_armed = (raw & ~(1u << HOS_PAD_GUIDE)) == 0;
-                else if (const uint32_t p = pad_press & ~(1u << HOS_PAD_GUIDE) & ~(1u << HOS_PAD_TOUCHPAD)) {
+                else if (const uint32_t p = pad_press & ~(1u << HOS_PAD_GUIDE)) {
                     int bit = 0;
                     while (!(p >> bit & 1)) bit++;
                     host->bind(HOS_BIND_PAD, controls[csel - kTop].button, ccol, bit);
@@ -4836,8 +5134,8 @@ void menu_tick() {
                     }
                 if (!listen_armed) listen_armed = !down;
                 else if (down) {
-                    host->bind(HOS_BIND_KEY, controls[csel - kTop].button, 0, down);
-                    host->bind(HOS_BIND_KEY, controls[csel - kTop].button, 1, 0);
+                    const int i = csel - kTop;   // (the selected key cell's slot only: the other key stays)
+                    host->bind(HOS_BIND_KEY, controls[i].button, menu_hit::ctl_key_slot(menu_hit::ctl_column(ccol, keys_only(i))), down);
                     listening = 0, changed = true;
                     save();
                 }
@@ -4851,7 +5149,7 @@ void menu_tick() {
                 const int at = option ? hit.index : kTop + hit.index;   // (the page's row: its own rows first)
                 if (on && (moved || ptr.pressed)) {
                     if (at != csel) csel = at, changed = true;
-                    if (hit.part == menu_hit::kCtlCell && !keys_only(hit.index) && ccol != hit.side) ccol = hit.side, changed = true;
+                    if (hit.part == menu_hit::kCtlCell && ccol != hit.side) ccol = hit.side, changed = true;
                 }
                 if (ptr.pressed & HOS_MOUSE_LEFT) {
                     if (option) press[hit.side < 0 ? 3 : 4] = true;   // (a value's halves: Left and Right; the name: Right)
@@ -4871,26 +5169,26 @@ void menu_tick() {
                 set_row(r, *r.value + (press[3] ? -r.step : r.step), press[3] ? -1 : 1);
                 changed = true;
             } else if (i >= 0) {
-                if ((press[3] || press[4]) && i < kControls && !keys_only(i)) {
-                    ccol = (ccol + kCtlColumns + (press[3] ? -1 : 1)) % kCtlColumns;
+                if ((press[3] || press[4]) && i < kControls) {
+                    ccol = menu_hit::ctl_step(ccol, press[3] ? -1 : 1, keys_only(i));
                     changed = true;
                 }
-                const int col = keys_only(i) ? kCtlKeyboard : ccol;
+                const int col = menu_hit::ctl_column(ccol, keys_only(i));
                 if (press[7]) {
                     if (i == kControls) {
                         host->bind(HOS_BIND_PAD, -1, 0, 0);
                         opts.pad_layout = 0;
                         save();
                     }
-                    else listening = col == kCtlKeyboard ? 2 : 1, listen_armed = false, listen_end = prof_now() + 6000000000LL;
+                    else listening = menu_hit::ctl_key_slot(col) >= 0 ? 2 : 1, listen_armed = false, listen_end = prof_now() + 6000000000LL;
                     changed = true;
                 }
                 if ((press[8] || press[9]) && i < kControls) {
-                    if (col != kCtlKeyboard) {
+                    if (menu_hit::ctl_key_slot(col) < 0) {
                         host->bind(HOS_BIND_PAD, controls[i].button, col, -1);
                         opts.pad_layout = detect_pad_layout();
                     }
-                    else for (int k = 0; k < 2; k++) host->bind(HOS_BIND_KEY, controls[i].button, k, 0);
+                    else host->bind(HOS_BIND_KEY, controls[i].button, menu_hit::ctl_key_slot(col), 0);
                     changed = true;
                     save();
                 }

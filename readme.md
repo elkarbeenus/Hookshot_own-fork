@@ -31,7 +31,7 @@ Linux on AMD RDNA2 GPUs: a desktop RX 6600 XT, the Steam Deck and the Legion Go 
 |---|---|
 | Upstream | [NotRexed/Hookshot](https://github.com/NotRexed/Hookshot), `main` |
 | Forked at | [`49f75dc`](https://github.com/NotRexed/Hookshot/commit/49f75dc82fb604643390ac7f95b1f5251b3ba09e) (2026-11-11) |
-| Last synced with upstream | [`9b6072cd`](https://github.com/NotRexed/Hookshot/commit/9b6072cd) (2026-11-12, merged into the fork branch) |
+| Last synced with upstream | [`8b762704`](https://github.com/NotRexed/Hookshot/commit/8b762704) (2026-11-13, merged into the fork branch) |
 | Fork branch | `handheld-rdna2` (one branch and one build for every device) |
 | License | GPL-3.0-or-later, as upstream ([LICENSE](LICENSE)) |
 | Output | A Linux AppImage (`LakuenRecomp-<version>-x86_64.AppImage`) from the **Linux AppImage** workflow |
@@ -57,8 +57,16 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   Settings kept from an older version get a one-time fix per device (each with a marker file beside
   `hookshot_options.ini`, so a player's later choice stays).
 - `hookshot_env.txt` takes this fork's `LAKUEN_` switches too. (`host/hos_main.c`)
-- **Shut down when done:** a box on the build's and the update's page shuts the device down when the build ends (a
-  minute's countdown with **Don't shut down** first; not after Cancel), for a build overnight. (`builder/linux/hookshot_builder.py`)
+- **Updates from this fork:** the builder looks for new releases here (elkarbeenus/LakuenRecompBuilder), never
+  at NotRexed/Hookshot's, whose newer versions would replace this fork's code; **Update** then offers them. From v0.3.3 on:
+  older builders did not look, so v0.3.3 is downloaded once by hand. `LAKUEN_UPDATE_CHECK=0` turns the builder's check off. (The game itself
+  no longer checks since upstream's #2926.) (`builder/linux/linux_update.py`)
+- **Transfer saves:** a link on the launcher's page copies the save slots and the game's settings into the game from
+  LaküenPlay / Lichii, an Eden-folder emulator, Eglantine or any folder, or out of it, after backing up the side it
+  overwrites (`scripts/oot_saves.py`, which also runs alone; **Check first** says what it would do).
+  (`builder/linux/hookshot_builder.py`)
+- **Standby when done:** a box on the build's and the update's page puts the device to standby when the build ends (a
+  minute's countdown with **Stay awake** first; not after Cancel), for a build overnight. (`builder/linux/hookshot_builder.py`)
 
 **Graphics (RDNA2 on RADV)**
 
@@ -91,6 +99,21 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   upstream's larger sizes) goes down to a quarter or Off on every device; `LAKUEN_SHADOW_SCALE=<0.25-4>` sets any size (1: the
   game's), `LAKUEN_SHADOWS=0` draws none. (`gpu/vk/shadow_res.h`, `gpu/vk/vk_draw.cpp`)
 - The game's code is tuned for the Legion Go S's Zen 3+ cores, as for the Deck's Zen 2. (`nx2/host_cpu.py`)
+- While RAM is short the idle upload memory goes and the heap is trimmed at once. Every shader is made at the start on
+  every device (making them as the game asked saved RAM but stuttered; `RX_VK_PRECOMPILE=0` still turns it off).
+  **Effect pass 1** and **Ground fog** leave two costly passes out, at once; two more passes are always drawn, as walls and
+  textures turned white without them. The handheld profiles (version 4) turn both off. The **Effect finder** rows rank
+  the game's passes by GPU time and leave any one out at once, to tell which effect each is; the builder's **Create a
+  report to send in** puts a summary (frame rate over the run, RAM and swap, shaders, the costliest GPU work, the finder's
+  changes, warnings) with the log and the settings into one zip. (`gpu/vk/vk_texture.cpp`, `gpu/vk/vk_draw.cpp`,
+  `gpu/vk/vk_menu.cpp`, `gpu/vk/vk_gprof.cpp`, `builder/linux/lakuen_report.py`)
+- **Master log:** after each run the builder sums up the game's last five logs (frame rate over the run, RAM and swap,
+  shaders, the costliest GPU work, warnings) in `lakuen_master_log.txt` in the game folder, newest run first; **Open
+  the master log** on the launcher's page shows it, and the report's zip carries it. One small file says what happened.
+  (`builder/linux/lakuen_report.py`)
+- **Time played:** the game adds up the time it runs in `lakuen_playtime.txt` in the game folder, and the builder's
+  launcher page shows it. `LAKUEN_PLAYTIME=0` keeps none. The launcher and the in-game menu's banner say it is an own
+  tuned fork of Hookshot. (`gpu/vk/vk_menu.cpp`, `builder/linux/hookshot_builder.py`)
 - The game reports which profile it starts with (`oe: profile ...` in the log). (`host/nn_applet.c`)
 
 - The first start uses the menu's Handheld settings with frame generation off (`RX_VK_AUTO_HANDHELD=0` keeps the docked
@@ -146,6 +169,23 @@ New behaviour can be switched off with an environment variable (put it in `hooks
 - The AppImage job builds in an Ubuntu 24.04 container with GCC 13 from Ubuntu's archive (no Launchpad PPA) and public DNS
   resolvers. The AppImage therefore needs glibc 2.39 or newer; SteamOS and current distributions have it.
   (`.github/workflows/linux-appimage.yml`)
+
+### Known issues
+
+What does not run well yet in this fork (tested on a desktop RX 6600 XT, a Steam Deck OLED and a Legion Go S):
+
+- **Legion Go S / Steam Deck:** playable, mostly 30 fps (60 with frame generation), but busy areas such as the open
+  field drop below 30 now and then: the CPU records up to 2,800 draws a frame there. The Steam Deck runs short of RAM
+  in some areas.
+- **Shadows** sometimes pop up for a moment even with Shadow quality at Off.
+- **Dialogue log:** rarely, glyph-like garbage in the text of the dialogue history.
+- **Black textures** for a moment after closing the quick item selection (R1).
+- **Lighting:** some places look far too bright, washed out in a white haze (around the market's interiors, a fairy's
+  fountain); Sharpness, the upscaler and frame generation do not change it. The ground fog
+  pass reads a buffer that is not bound (zeros); turning it off does not change this.
+- **Sharpness:** a high Sharpness value makes the picture grainy with AMD FSR 3.1; 0-20 % looks cleaner.
+- **Effect pass 1** shows no visible difference yet; what it draws is still open.
+- The upstream project is no longer reachable on GitHub (2026-11-13); this fork keeps its code as of that day.
 
 ### Versions
 
@@ -452,7 +492,8 @@ shows bands or blocks. Off unless set; `RX_VK_ASTC_RGBA8=1` above still wins whe
 ## In-game menu
 
 By default, press <kbd>Insert</kbd>, <kbd>F1</kbd> or <kbd>Esc</kbd> in game. On a controller, press Home or Select and
-Start together; on a DualShock 4 or DualSense, clicking the touchpad does the same as <kbd>F1</kbd>.
+Start together; on a DualShock 4 or DualSense, clicking the touchpad does the same as <kbd>F1</kbd>, unless a row of
+Controls takes the touchpad as its input.
 The same keys close it; with every Menu shortcut, <kbd>Esc</kbd> goes back a page or closes the open menu.
 <kbd>F1</kbd> always works. **Controls → Menu shortcut** can leave <kbd>Insert</kbd> free for another overlay (F1 only).
 With Insert or F1, or with F1 only, <kbd>Esc</kbd> does not open the menu: it only lets the mouse go. Options saved by
@@ -487,7 +528,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 
 | Tab | Option | Choices | Default |
 |---|---|---|---|
-| Graphics | Quality preset | Custom, Minimum (4GB), Low (6GB), Balanced (8GB), High (12GB), Ultra (16GB+) | Custom |
+| Graphics | Quality preset | Custom, Minimum (4GB), Low (6GB), Balanced (8GB), High (12GB), Ultra (16GB+), Auto (this PC) | Auto (this PC) on a first start; Custom in an options file from before it |
 | | Aspect ratio | The shapes your screen's resolutions have, narrowest first (5:4, 4:3, 16:10, 16:9, 21:9, 32:9, ...), your monitor's own marked "(monitor's)" (after a restart) | Your monitor's |
 | | Output resolution | The Aspect ratio's sizes: your screen's resolutions and the common ones (1440p, 4K, 5K at 16:9; 1920x1200, 2560x1600 at 16:10; 3440x1440 at 21:9; ...), and 2048x1152 (the game's own) at 16:9 (after a restart) | 2048x1152 |
 | | Profile | Docked, Handheld (after a restart) | Docked |
@@ -498,7 +539,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Frame generation | Off, Auto, 2x to 8x | Off |
 | | Frame generation by | Auto (NVIDIA DLSS Frame Generation where it runs: RTX 40 and newer, with a temporal Upscaler; else the built-in one; with frame generation on, the row shows who makes the frames, as Auto: DLSS FG, and why not DLSS FG when another does), Built-in FG (changes at once) | Auto |
 | | Frame pacing | Off, On | Off |
-| | Game frame rate cap | 60, 90, 120, 144, 165, 240 FPS, Uncapped (after a restart) | 60 FPS |
+| | Game frame rate cap | 60, 90, 120, 144, 165, 240 FPS, Uncapped, 30 FPS (after a restart) | 60 FPS |
 | | NVIDIA Reflex | Off, On, On + Boost (shown only on NVIDIA GPUs with `VK_NV_low_latency2`) | Off |
 | | AMD Anti-Lag 2 | Off, On (shown only on AMD GPUs with `VK_AMD_anti_lag`) | Off |
 | | Fullscreen | Off, On (the same as <kbd>F11</kbd>) | Off |
@@ -510,8 +551,14 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | HDR peak brightness | 400 to 4000 nits (while HDR is on) | 1000 nits |
 | | HDR contrast | 50% to 200% around mid grey (while HDR is on) | 100% |
 | | HDR tone mapper | Vanilla (the game's curve), PsychoV35 (RenoDX's; with HDR set to Native. DLSS, FSR and TAAU do not take its scene yet: the game's own upscale runs) | Vanilla |
+| | Texture detail | Auto, Full, Medium, Low | Auto |
 | | Anisotropic filtering | Game's, 2x, 4x, 8x, 16x | 16x |
 | | Shadow quality | Game, Medium (half size), Low (a third), Very low (a quarter), Off (none drawn) (after a restart; at Game, AMD handhelds draw them at half size; `LAKUEN_SHADOW_SCALE=<0.25-4>` and `LAKUEN_SHADOWS=0` decide over the row) | Game |
+| | Effect pass 1 | On, Off: a costly pass of the game's (a 512x512 picture made now and then) drawn or left out, at once (a test row of this fork's) | On |
+| | Ground fog | On, Off: the fog near the ground (a half-size pass), drawn or left out, at once | On |
+| | Effect finder | On, Off: the game's passes timed on the GPU and ranked for the two rows below; each change logged for the report (after a restart; a little GPU time) | Off |
+| | Finder pass | #1-#20: the pass by its GPU cost, most first (rank, ms a frame, draws a frame); the ranking holds while it is off | #1 |
+| | Finder pass drawn | On, Off: the pass picked above drawn or left out, at once | On |
 | | GPU device | Auto, or each graphics card by name (after a restart) | Auto |
 | | VRAM budget | Auto, 3.6, 4.8, 6, 7.5, 9, 11 GB (2.2 GB only from the Minimum (4GB) preset); a quality preset sets it | Auto |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |
@@ -523,12 +570,12 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Game speed | Per frame, Real time | Real time |
 | | Field of view | 50% to 150%, in steps of 5; applies immediately during gameplay | 100% (original) |
 | | Text speed | Normal, 2x, 4x, Instant | Normal |
-| | Text size | Original, 110%, 125%, 150%, 175% (dialogue, Navi and signs) | Original |
+| | Text size | Original, 110%, 125%, 150%, 175% (dialogue, the fairy's hints and signs) | Original |
 | | Microphone | Off, Default, or each microphone by name | Default |
 | | Game language | The game's 16 languages, each by its own name (after a restart) | The one built with |
 | | Menu language | Auto (the game's language), or English, Português (Brasil), Español (Latinoamérica), Español (España), Français, Deutsch, Italiano, Nederlands, Polski, Русский, 日本語, 한국어, 简体中文, 繁體中文 | Auto |
 | | Discord status | Off, On ("Playing Hookshot" and the time played in your Discord status, while Discord runs on this PC) | On |
-| | Skip opening | Off, On (skips the new-game opening: the story movie and Navi waking Link; later cutscenes and the title screen stay) | Off |
+| | Skip opening | Off, On (skips the new-game opening: the story movie and the fairy waking the hero; later cutscenes and the title screen stay) | Off |
 | | Bug report | Saves a report into a new folder in `bug-reports` (below) | |
 | Controls | Controller in background | Off, On | Off |
 | | Mouse camera | As the stick, Native | As the stick |
@@ -539,6 +586,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Invert camera Y | Off, On | Off |
 | | Camera speed | 50% to 400%, in steps of 25 | 100% |
 | | Stick dead zone | Default (24%), 5%, 10%, 15%, 20%, 30% | Default (24%) |
+| | Auto run | Off, On | Off |
 | | Rumble strength | Off, 25% to 150%, in steps of 25 | 100% |
 | | Layout preset | Nintendo (Def), Xbox / PC, Swap Face, Custom (on the Controls page) | Nintendo (Def) |
 | | Button prompts | Auto, Switch, Xbox, PlayStation 4, PlayStation 5, Steam Deck (on the Controls page) | Auto |
@@ -556,6 +604,14 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   and the video memory limits for a card with that much memory. It leaves the Upscaler and Frame generation as
   you chose them: with DLSS, FSR 3.1 or FSR 4, the preset's resolution becomes their nearest mode. Changing most other
   rows yourself sets it back to Custom.
+- **Auto (this PC)**, which a first start begins on, chooses for the PC it runs on: the memory tier from the card's
+  video memory (an integrated GPU, a Steam Deck or a card without mesh shaders at Minimum), DLSS on an NVIDIA RTX card
+  or FSR 4 on an AMD RX 9000 where the build has them (else the game's own upscaler), and the screen's size as the
+  Output resolution where the tier has the memory for it. In the first minute of play it then measures the GPU: while
+  frames are missed with the GPU over 90% busy it lowers the Render resolution a step, and while the frame rate cap holds
+  with the GPU under half busy it raises it a step, up to the best mode that still upscales (DLSS or FSR Quality, or 100%
+  with the game's own; never DLAA or native AA). At most two steps; a PC that holds its cap keeps its picture. It chooses again when the card or the screen changes. `hookshot_log.txt`'s
+  `Auto (this PC)` lines say what it chose and why.
 - **Menu size** is how large the menu, the FPS counter and the start-up screen are drawn: Medium unless you choose Small
   (a desk) or Large (a TV across the room). It stays the same whether you use a controller or the keyboard and mouse.
 - **Field of view** changes the gameplay camera's vertical angle: 100% keeps the game's view, higher shows more of the
@@ -572,10 +628,12 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   the frames that frame generation shows, so it has no effect while Frame generation is Off.
 - **Game frame rate cap** limits the frames the game renders. With a cap of 60 and Frame generation at 2x, the output
   can reach 120 FPS. Choose **Auto** in Frame generation to target the display's refresh rate instead of a fixed multiplier.
+  **30 FPS** reduces rendering work for handhelds and slower PCs while keeping real-time game speed. It is the last option
+  in the row so existing saved caps keep their meaning. At 30, Game speed follows real time even if Per frame is selected.
   A cap **past 60 is experimental**: the game keeps real time, but some cutscenes and bosses still count frames and can
   misbehave (Gohma running into the wall, the intro's narration running ahead: #1742). 60 is the safe choice.
   **Uncapped** renders as fast as the PC can (the game still keeps real time). A display that waits for its refresh still
-  holds the frames to its refresh rate: V-Sync on, or the driver's FIFO mode. `HOS_FPS_MAX=<61-1000>` sets a cap for one
+  holds the frames to its refresh rate: V-Sync on, or the driver's FIFO mode. `HOS_FPS_MAX=30` or `<61-1000>` sets a cap for one
   run.
 - **Bug report** writes a folder `bug-reports/<date>_<time>` in the game folder with what an issue needs: `report.txt`,
   which answers the [game problem form](https://github.com/NotRexed/Hookshot/issues/new?template=1-game-problem.yml)'s
@@ -684,7 +742,9 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   while the game was in front.
 - **Audio output** is the speakers the game mixes its sound for. Auto is 5.1 when your default output device has 5.1
   or more speakers, else stereo; Stereo or 5.1 chooses one whatever the device has (5.1 on stereo speakers is mixed
-  down). For one run, `HOS_AUDIO_CHANNELS=2` or `6` chooses stereo or 5.1 and wins over the menu.
+  down). Auto counts the speakers Windows names, not the channels: an audio interface whose outputs are not set up as
+  surround speakers (a Focusrite Scarlett's 8 outputs, for one) is stereo, so voices and the ocarina do not go to an
+  output with nothing connected. For one run, `HOS_AUDIO_CHANNELS=2` or `6` chooses stereo or 5.1 and wins over the menu.
 - **Microphone** is what the ocarina hears when the game's own microphone option is on (an instrument, or humming).
   Default follows Windows' default recording device; the list shows each microphone by name, and a change applies at
   once. A chosen microphone that is unplugged stays chosen (shown as not connected): Default stands in until it is
@@ -714,6 +774,11 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
   game's own camera speed option still picks the speed this multiplies.
 - **Stick dead zone:** how far a stick moves from center in any direction before it counts. Default is about 24%. Use
   a lower value for a precise stick or a higher one for a stick that drifts. The game also applies its own dead zone.
+- **Auto run:** the sprint goes on after the run button (A) is let go. Hold A for 0.4 s while moving (the roll, then
+  the sprint, as usual), let go, and A stays held for the game while the stick stays pushed; a short press (a roll on
+  its own) is not kept. Letting go of the stick or pressing A again stops it (a long hold keeps it again). Only while
+  Link is yours to move: an event (a talk, a cutscene), the pause menu, the map, the Insert menu and the ocarina's notes
+  end it, so A never picks an entry, skips text or plays a note there.
 - **Rumble strength** scales the controller's rumble: 100% is the game's own, Off turns it off. The game's HD rumble
   goes to a controller's heavy and light motors by its frequency.
 - **Motion controls** (Controls tab, Motion page): the controller's gyroscope aims where the game uses motion, as on the Switch. It works with
@@ -756,12 +821,12 @@ anything SDL reports as a Switch Pro Controller or Joy-Con, and that includes th
 `HOS_HD_RUMBLE=0` to give them the plain motor rumble.
 
 To change which gamepad button or key presses a Switch button, or which keys move and turn the camera, open the
-Controls tab's Controls page. Choose a row and a column (Gamepad or Keyboard), press <kbd>Enter</kbd> (or the bottom
-face button), then the new button or key. <kbd>Esc</kbd> cancels, <kbd>Delete</kbd> clears it, and Reset to defaults
+Controls tab's Controls page. Choose a row and a column (Input 1 or 2 for the gamepad, Key 1 or 2 for the keyboard: each
+control takes two of each), press <kbd>Enter</kbd> (or the bottom face button), then the new button or key. <kbd>Esc</kbd> cancels, <kbd>Delete</kbd> clears it, and Reset to defaults
 puts them all back. A gamepad button taken from another Switch button swaps with it. The page saves them in
 `hookshot_options.ini`.
 
-**Ocarina notes:** the page gains five rows, `Ocarina note (L)`, `(R)`, `(A)`, `(Y)`, `(X)`, unset by default: the game's own
+**Instrument notes:** the page gains five rows, `Ocarina note (L)`, `(R)`, `(A)`, `(Y)`, `(X)`, unset by default: the game's own
 buttons play until you bind a note to a key or gamepad input of your own, and a bound note then answers only that input while
 the game waits for it. A dialogue or cutscene that takes the buttons ends the wait, and a song lesson keeps the game's own too.
 
@@ -933,8 +998,10 @@ the row offers FSR 3.1 on any Vulkan 1.3 GPU with push descriptors, extended sto
 without a format (`vk: fsr3: ... can run on this GPU` in the log). It upscales on the same inputs as DLSS and FSR 4: the
 scene's colour, its depth, motion from the camera with the skinned characters' own drawn over it (Link, his shield and
 the people around him keep their outline while they move), and the same camera jitter (`RX_VK_FSR_JITTER=0` turns it
-off). Things that move by themselves and are not skinned (Navi's body, props) can still trail. `RX_VK_FSR3_CHAIN=0` gives
-it the camera's motion alone, as before.
+off). Things that move by themselves and are not skinned (the fairy's body, props) can still trail. `RX_VK_FSR3_CHAIN=0` gives
+it the camera's motion alone, as before. With HDR on **Native**, it takes the game's HDR colour as linear light, so
+highlights above the paper white are kept (`RX_VK_FSR3_HDR=0`: cut at the paper white, as before; with
+`RX_VK_FSR3_CHAIN=0` they are cut too).
 
 </details>
 
@@ -1031,7 +1098,7 @@ in `hookshot_options.ini`, `RX_VK_FSR4=1` or `2` for one run, `RX_VK_FSR4=0` to 
   takes their place.
 - **Or fetched for you (Windows):** `make_game.py --fsr --fetch-fsr-runtime --accept-amd-license` downloads those two
   DLLs and AMD's license from AMD's FidelityFX SDK repository at the v2.4.0 tag, checks each against its SHA-256, and
-  puts them in the game folder (`HOOKSHOT_FFX_SDK=<folder>` keeps them between builds, default `workfx-sdk`).
+  puts them in the game folder (`HOOKSHOT_FFX_SDK=<folder>` keeps them between builds, default `work/ffx-sdk`).
   `python -I scripts/ffx_sdk.py --accept-amd-license --game <game folder>` does the same for a game built already.
   Without `--accept-amd-license` nothing is downloaded (the script asks when run by hand), as with NVIDIA's license for
   DLSS. AMD DLLs already in the game folder that are not v2.4.0's (a newer SDK put there by hand) are left alone, and
