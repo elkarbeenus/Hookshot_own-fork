@@ -23,9 +23,12 @@ import zipfile
 from part_links import SYSROOT_PART, is_absolute_link, relative_sysroot_link
 
 LIST_NAME = "hookshot-linux.txt"
-LATEST_LIST = "https://github.com/NotRexed/Hookshot/releases/latest/download/" + LIST_NAME
-LATEST_API = "https://api.github.com/repos/NotRexed/Hookshot/releases/latest"
-RELEASES_API = "https://api.github.com/repos/NotRexed/Hookshot/releases?per_page=20"
+# (LaküenRecomp) the releases this builder updates from: this fork's, not NotRexed/Hookshot's, whose newer versions would
+# replace this fork's code. LAKUEN_UPDATE_REPO=<owner>/<repo>: another
+UPDATE_REPO = os.environ.get("LAKUEN_UPDATE_REPO") or "elkarbeenus/LakuenRecompBuilder"
+LATEST_LIST = "https://github.com/%s/releases/latest/download/%s" % (UPDATE_REPO, LIST_NAME)
+LATEST_API = "https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO
+RELEASES_API = "https://api.github.com/repos/%s/releases?per_page=20" % UPDATE_REPO
 # (the update tracks: the builder's Track choice, by default the track of the build installed. The game's own check,
 # host/hos_update.c, and the Windows builder, Updater.cs, use the same rules)
 TRACKS = ("release", "rc", "nightly")
@@ -130,7 +133,7 @@ def release_of(tag):
 def list_url(tag=None):
     if not tag:
         return LATEST_LIST
-    return "https://github.com/NotRexed/Hookshot/releases/download/%s/%s" % (release_of(tag), LIST_NAME)
+    return "https://github.com/%s/releases/download/%s/%s" % (UPDATE_REPO, release_of(tag), LIST_NAME)
 
 
 def newest_release(tags):
@@ -370,7 +373,7 @@ def latest_tag(get=None, track="release"):
         try:
             return parse_list(get(list_url("nightly")).decode("utf-8"), local=False).tag
         except Exception:
-            return None
+            pass   # (LaküenRecomp: no nightly release here; a test build from the Actions tab is offered the latest release)
     if track == "rc":
         try:
             import json

@@ -44,6 +44,10 @@ New behaviour can be switched off with an environment variable (put it in `hooks
   Settings kept from an older version get a one-time fix per device (each with a marker file beside
   `hookshot_options.ini`, so a player's later choice stays).
 - `hookshot_env.txt` takes this fork's `LAKUEN_` switches too. (`host/hos_main.c`)
+- **Updates from this fork:** the builder and the game look for new releases here (elkarbeenus/LakuenRecompBuilder), never
+  at NotRexed/Hookshot's, whose newer versions would replace this fork's code; **Update** then offers them. From v0.3.3 on:
+  older builders did not look, so v0.3.3 is downloaded once by hand. `LAKUEN_UPDATE_CHECK=0` turns the builder's check off.
+  (`builder/linux/linux_update.py`, `host/hos_update.c`)
 - **Standby when done:** a box on the build's and the update's page puts the device to standby when the build ends (a
   minute's countdown with **Stay awake** first; not after Cancel), for a build overnight. (`builder/linux/hookshot_builder.py`)
 

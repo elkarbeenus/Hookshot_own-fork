@@ -1155,10 +1155,10 @@ class Builder(tk.Tk):
     def lookup_latest(self):
         def run():
             forced = os.environ.get("HOOKSHOT_LATEST_TAG")
-            # (this fork) NotRexed/Hookshot's latest release is not asked for: a newer one there turns Build into "Update builder"
-            # / "Update", which downloads that release in place of this fork's code. HOOKSHOT_CHECK_UPSTREAM=1: asked as before
-            upstream = os.environ.get("HOOKSHOT_CHECK_UPSTREAM") == "1"
-            tag = None if forced == "none" else (forced or (linux_update.latest_tag(track=track) if upstream else None))
+            # (LaküenRecomp) this fork's latest release (linux_update.UPDATE_REPO), never NotRexed/Hookshot's: a newer one here
+            # turns Build into "Update builder" / "Update". LAKUEN_UPDATE_CHECK=0: not asked
+            asked = os.environ.get("LAKUEN_UPDATE_CHECK", "1") != "0"
+            tag = None if forced == "none" else (forced or (linux_update.latest_tag(track=track) if asked else None))
             self.lines.put(("latest", tag or ""))
         track = self.track_id()
         threading.Thread(target=run, daemon=True).start()
