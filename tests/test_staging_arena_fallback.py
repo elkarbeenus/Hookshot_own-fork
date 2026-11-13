@@ -24,7 +24,11 @@ def main():
         raise SystemExit("a staging arena that cannot be made at 64 MB is not tried at the size asked for")
     if body.index("make(std::max(kArena, need))") > body.index("make(need)"):
         raise SystemExit("the small arena is tried before the 64 MB one")
-    if "destroy_buffer(a.buffer, a.allocation);" not in body:
+    # (staging() makes its arenas through arena_make, which the spare's worker shares: the unmapped one is destroyed there)
+    if "return arena_make(a, size);" not in body:
+        raise SystemExit("staging() does not make its arenas through arena_make")
+    made = block(tex, "bool arena_make(Arena& a, uint64_t size) {")
+    if "if (!m) {" not in made or "destroy_buffer(a.buffer, a.allocation);" not in made:
         raise SystemExit("an arena made but not mapped is kept (a leak)")
     if "no %llu MB arena could be made" not in body:
         raise SystemExit("a staging arena that could not be made is not logged")

@@ -2,9 +2,8 @@
 
 host/nn_os_sync.c replaces the nn::os condition variable and semaphore functions with host objects. Siblings left to the
 lifted SDK act on guest words the HLE never writes, and signal kernel keys no HLE waiter sleeps on:
-- BroadcastConditionVariable woke nobody (the movie framework's ALooper::postReply and LiveDataSource::queueBuffer, and
-  NvOsConditionBroadcast, call it);
-- TimedAcquireSemaphore (musl's sem_timedwait, NvOsSemaphoreWaitTimeout) never saw an HLE release.
+- BroadcastConditionVariable woke nobody (the movie framework and NVIDIA's OS layer call it);
+- TimedAcquireSemaphore (the C library's timed semaphore wait, NVIDIA's OS layer) never saw an HLE release.
 
 The fixture runs the real code cut from the source (handoff_on, cv_enter, cv_leave, cv_reserve, the Broadcast HLE,
 sema_acquire_for) over stubs: counted lock pairs and wake calls, and a fake clock whose wait can release the semaphore.
@@ -27,7 +26,8 @@ from pathlib import Path
 RUN_ALL_ARGS = ["--cc", "gcc"]
 
 ROOT = Path(__file__).resolve().parents[1]
-PARTS = {"@HANDOFF@": "static int handoff_on(void) {", "@ENTER@": "static void cv_enter(Obj *cv, Obj *m) {",
+PARTS = {"@HANDOFF@": "static int handoff_on(void) {", "@COUNT@": "static void cv_count_in(Obj *cv) {",
+         "@ENTER@": "static void cv_enter(Obj *cv, Obj *m) {",
          "@LEAVE@": "static int cv_leave(Obj *cv, Obj *m) {", "@RESERVE@": "static void cv_reserve(Obj *cv) {",
          "@BROADCAST@": "HLE(_ZN2nn2os26BroadcastConditionVariableEPNS0_21ConditionVariableTypeE) {",
          "@SEMA@": "static int sema_acquire_for(Obj *s, int64_t ns) {"}
@@ -70,7 +70,7 @@ typedef struct Obj {
     uint64_t gen;
     int sem;
     int reserved;
-    int cv_waiting, cv_owed, cv_mixed;
+    int cv_waiting, cv_in, cv_owed, cv_mixed;   // (cv_in: #2708, the waiters inside under cv->lk)
     struct Obj *cv_mutex, *cv_owed_mutex[8];
 } Obj;
 static Obj cvo, so, mo, mo2;
@@ -101,7 +101,10 @@ static int wait_until(Obj *o, int64_t deadline) {   /* (host/nn_os_sync.c's: 0 o
 }
 
 @HANDOFF@
+@COUNT@
 @ENTER@
+/* a waiter as the wait HLEs bring one in: counted (cv_count_in, before cv->lk), then in (cv_enter) */
+static void waiter_in(Obj *cv, Obj *m) { cv_count_in(cv); cv_enter(cv, m); }
 @LEAVE@
 @RESERVE@
 @BROADCAST@
@@ -139,26 +142,26 @@ int main(int argc, char **argv) {
     broadcast();
     CHECK(mo.reserved == 0);
     /* three waiters on one mutex: all wake and all are owed it */
-    for (int i = 0; i < 3; i++) cv_enter(&cvo, &mo);
+    for (int i = 0; i < 3; i++) waiter_in(&cvo, &mo);
     broadcast();
     CHECK(mo.reserved == (handoff ? 3 : 0));
     CHECK(leave_all(&mo) == (handoff ? 3 : 0));
     /* one owed by an earlier signal, two more in: the broadcast owes only the two */
-    cv_enter(&cvo, &mo);
+    waiter_in(&cvo, &mo);
     if (handoff) cv_reserve(&cvo);
-    cv_enter(&cvo, &mo);
-    cv_enter(&cvo, &mo);
+    waiter_in(&cvo, &mo);
+    waiter_in(&cvo, &mo);
     broadcast();
     CHECK(mo.reserved == (handoff ? 3 : 0));
     CHECK(leave_all(&mo) == (handoff ? 3 : 0));
     /* ten waiters: at most 8 owed (cv_reserve's limit), the others lock as anyone does */
-    for (int i = 0; i < 10; i++) cv_enter(&cvo, &mo);
+    for (int i = 0; i < 10; i++) waiter_in(&cvo, &mo);
     broadcast();
     CHECK(mo.reserved == (handoff ? 8 : 0));
     CHECK(leave_all(&mo) == (handoff ? 8 : 0));
     /* waiters with different mutexes: no hand-off */
-    cv_enter(&cvo, &mo);
-    cv_enter(&cvo, &mo2);
+    waiter_in(&cvo, &mo);
+    waiter_in(&cvo, &mo2);
     broadcast();
     CHECK(mo.reserved == 0 && mo2.reserved == 0);
     cv_leave(&cvo, &mo), cv_leave(&cvo, &mo2);
@@ -200,6 +203,10 @@ def main():
     for name, arg in SEMA_HLE.items():
         check(re.search(r"^HLE\(%s\) \{ RET\(sema_acquire_for\(obj\(ARG\(0\), K_SEMA\), %s\)\); \}$" % (name, re.escape(arg)), src, re.M),
               "%s is not the HLE's sema_acquire_for (left to the guest SDK, it never sees an HLE release)" % name)
+    # (the fixture stubs wait_until: its clamp, below INFINITE's 0xFFFFFFFF ms, is pinned here)
+    wait = block(src, "static int wait_until(Obj *o, int64_t deadline) {")
+    check("(DWORD)(ms < 0x7FFFFFFF ? ms : 0x7FFFFFFF)" in wait,
+          "wait_until no longer caps one sleep below 0xFFFFFFFF ms (INFINITE): a long finite wait could sleep forever")
     env = {k: v for k, v in os.environ.items() if not k.startswith("HOS_")}
 
     def build(tmp, name, **changed):

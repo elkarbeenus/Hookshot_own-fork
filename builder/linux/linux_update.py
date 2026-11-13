@@ -29,8 +29,8 @@ UPDATE_REPO = os.environ.get("LAKUEN_UPDATE_REPO") or "elkarbeenus/LakuenRecompB
 LATEST_LIST = "https://github.com/%s/releases/latest/download/%s" % (UPDATE_REPO, LIST_NAME)
 LATEST_API = "https://api.github.com/repos/%s/releases/latest" % UPDATE_REPO
 RELEASES_API = "https://api.github.com/repos/%s/releases?per_page=20" % UPDATE_REPO
-# (the update tracks: the builder's Track choice, by default the track of the build installed. The game's own check,
-# host/hos_update.c, and the Windows builder, Updater.cs, use the same rules)
+# (the update tracks: the builder's Track choice, by default the track of the build installed. The setup,
+# builder/setup/setup.c, and the Windows builder, Updater.cs, use the same rules)
 TRACKS = ("release", "rc", "nightly")
 
 

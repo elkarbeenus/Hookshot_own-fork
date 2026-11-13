@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VK = ROOT / "gpu" / "vk"
 
 STUBS = r'''
+#include <array>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
@@ -228,7 +229,9 @@ def harness():
     tls = re.search(r"TLS_OBJECT\(handle_hits, (.+)\)\s*$", hits, re.M)
     if not tls:
         raise SystemExit("handle_hits is no longer a TLS_OBJECT: update this check")
-    hits = hits[:tls.start()] + "inline %s& handle_hits() { static %s m; return m; }\n" % (tls.group(1), tls.group(1))
+    # (every TLS_OBJECT of the piece as a plain function: handle_hits, and #2960's view_fast in front of it)
+    hits = re.sub(r"^TLS_OBJECT\((\w+), (.+)\)\s*$", lambda m: "inline %s& %s() { static %s o; return o; }" % (m.group(2), m.group(1), m.group(2)),
+                  hits, flags=re.M)
     view_of = cut(draw, "VkImageView texture_view_of(", "/// A uniform buffer's descriptor range")
     for name, text in (("vk_draw.cpp", draw), ("vk_shader.cpp", shader)):
         if '#include "flat_map.h"' not in text:

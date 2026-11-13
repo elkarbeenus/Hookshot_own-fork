@@ -1085,7 +1085,7 @@ public partial class MainWindow : Window
             return;
         }
         else if (line.StartsWith("@@done ")) finished = line[7..];
-        else if (ShaderStep.Reason(line) is { } later) shadersLater = later;
+        else if (ShaderStep.Note(line) is { } later) shadersLater = later;
         else if (FilesLine.Match(line) is { Success: true } m) filesOf = int.Parse(m.Groups[1].Value);
         else if (FileLine.IsMatch(line)) filesDone++;
         if (current == "compile" && filesChanged < 0 && filesOf > 0 && rows.TryGetValue("compile", out var c))

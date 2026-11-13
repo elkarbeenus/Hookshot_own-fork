@@ -35,7 +35,9 @@ def main():
     reserve = block(tex, "static uint64_t commit_reserve()")
     if "RX_VK_COMMIT_RESERVE_MB" not in reserve or "2560ull << 20" not in reserve:
         raise SystemExit("FAIL: commit_reserve is not RX_VK_COMMIT_RESERVE_MB with a 2560 MB default")
-    rule = re.search(r"if \(reserve && commit_headroom\(&commit_free\) && commit_free < reserve\) \{(.*?)\n        \}", tex, re.S)
+    if "const bool headroom_known = reserve && commit_headroom(&commit_free);" not in tex:
+        raise SystemExit("FAIL: the commit rule does not read the headroom only with a reserve")
+    rule = re.search(r"if \(headroom_known && commit_free < reserve\) \{(.*?)\n        \}", tex, re.S)
     if not rule:
         raise SystemExit("FAIL: the textures' budget has no commit rule")
     body = rule.group(1)
@@ -63,6 +65,20 @@ def main():
     refused = block(glue, "static void commit_refused(uint64_t lo, uint64_t size, DWORD err)")
     if "hos_out_of_memory_box" not in refused:
         raise SystemExit("FAIL: commit_refused does not show the out-of-memory notice")
+    # (#2941: std::bad_alloc on the presenting thread, in the page table's flush, closed the game: the flush writes the changes
+    # at once when its list cannot be made, and the renderer keeps a reserve that operator new's handler gives back)
+    mem = (ROOT / "gpu" / "vk" / "vk_memory.cpp").read_text(encoding="utf-8")
+    flush = block(mem, "bool memory_table_flush()")
+    if "catch (const std::bad_alloc&)" not in flush or "guest_pages[r.first + i] =" not in flush.split("catch (const std::bad_alloc&)")[1]:
+        raise SystemExit("FAIL: memory_table_flush does not write the table at once when its list cannot be allocated")
+    handler = block(tex, "void oom_handler()")
+    if "oom_block.exchange(nullptr)" not in handler or "VirtualFree(p, 0, MEM_RELEASE)" not in handler or "throw std::bad_alloc();" not in handler:
+        raise SystemExit("FAIL: oom_handler does not give the reserve back once, then throw as before")
+    tend = block(tex, "static void oom_reserve_tend(bool known, uint64_t commit_free, uint64_t reserve)")
+    if "std::set_new_handler(oom_handler)" not in tend or "commit_free > reserve + kOomReserve" not in tend:
+        raise SystemExit("FAIL: oom_reserve_tend does not install the handler and hold the reserve again above the rule's line")
+    if "oom_reserve_tend(headroom_known, commit_free, reserve);" not in tex:
+        raise SystemExit("FAIL: the commit rule does not tend the renderer's reserve")
     print("PASS: the textures give commit back near the limit, and a commit at the limit waits for it before it fails")
 
 

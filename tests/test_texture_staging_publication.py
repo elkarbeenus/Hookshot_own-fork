@@ -22,6 +22,10 @@ def main():
     tex = (a.source / "gpu/vk/vk_texture.cpp").read_text(encoding="utf-8")
     vma = (a.source / "gpu/vk/vk_vma.cpp").read_text(encoding="utf-8")
     actual = block(tex, "struct Arena {") + ";\nstd::vector<Arena> arenas;\nconstexpr uint64_t kArena=kModelArena;\n"
+    # (the spare arena made off the replay thread, #2997: off here, so staging() makes its own, as these checks expect)
+    actual += ("#include <atomic>\nstruct SpareArenas { std::atomic<int64_t> taken{0}, made_here{0}; };\nSpareArenas spare_arenas;\n"
+               "bool spare_on() { return false; }\nbool spare_take(Arena&) { return false; }\n")
+    actual += block(tex, "bool arena_make(") + "\n"   # (a new arena, made and mapped: staging() calls it, #2997)
     actual += block(tex, "struct Staging {") + ";\n" + block(tex, "Staging staging(")
     actual += "\n" + block(vma, "void flush_mapped_range(")
     astc = block(tex, "bool upload_astc_gpu(")

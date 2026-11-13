@@ -1725,7 +1725,8 @@ class Builder(tk.Tk):
         elif line.startswith("@@error "):
             self.error = line[8:]
         elif line.startswith(make_game.NOT_PREPARED):
-            self.shaders_later = True
+            # (left to the first start; or, the GPU driver having stopped responding, each shader to when it is first drawn)
+            self.shaders_later = "first start" if line.endswith(make_game.FIRST_START) else "first drawn"
         if hasattr(self, "log"):
             self.add_log(line + "\n")
             self.log.see("end")
@@ -1747,8 +1748,10 @@ class Builder(tk.Tk):
                 text += ", compiled in %d:%02d" % (int(compiled) // 60, int(compiled) % 60)
                 if previous > 0:
                     text += " · last time %d:%02d" % (int(previous) // 3600, int(previous) // 60 % 60)
-            if self.shaders_later:
+            if self.shaders_later == "first start":
                 text += " · the shaders are prepared at its first start"
+            elif self.shaders_later:
+                text += " · the shaders were not prepared: each is built when the game first draws it"
             self.stage_text.set(text)
             self.bar.configure(value=1.0)
             try:
