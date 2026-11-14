@@ -1,0 +1,10 @@
+# (LaküenRecomp) The parts the Windows setup lists that this repository does not make itself: each one's name in the
+# builder-parts release, its SHA-256 and size, and where the mirror job (windows-builder.yml) takes it from when it is missing.
+# Python, emsdk, CPM and wgpu-native as Hookshot first published them, and its prebuilt third_party files, through HeyListen's
+# mirror (Hookshot's repository is gone); the play profile from this repository's own Linux share part (scripts/windows/profile_part.py).
+HookshotBuilder-python-55d9f3c4797a.zip 55d9f3c4797a64f5340d1972fcc64b18ac891a84fafdf670d9f65444ac801cad 44287636 https://github.com/Sacrappy/HeyListen/releases/download/builder-parts/HookshotBuilder-python-55d9f3c4797a.zip
+HookshotBuilder-emsdk-b4c8fc476654.zip b4c8fc476654d7657806180039b3a96050c104cf6a93dab1cc5c027277ece368 120100315 https://github.com/Sacrappy/HeyListen/releases/download/builder-parts/HookshotBuilder-emsdk-b4c8fc476654.zip
+HookshotBuilder-cpm-c30c77e4cf00.zip c30c77e4cf000ebf11ec82e79ace4bef3206d3698c61146f7477baa428ea7ef0 18641689 https://github.com/Sacrappy/HeyListen/releases/download/builder-parts/HookshotBuilder-cpm-c30c77e4cf00.zip
+HookshotBuilder-wgpu-native-a3b3d8253fba.zip a3b3d8253fbaedf5975172994c0b45202fe2e4ff89a42ff5bfad53f9468cf498 2162194 https://github.com/Sacrappy/HeyListen/releases/download/builder-parts/HookshotBuilder-wgpu-native-a3b3d8253fba.zip
+HookshotBuilder-third_party-498b31ee2254.zip 498b31ee2254feb819032e979b37674919ec7a55ff1fd104a4a4b8ae4f620e4c 30155632 https://github.com/Sacrappy/HeyListen/releases/download/builder-parts/HeyListenBuilder-third_party-498b31ee2254.zip
+HookshotBuilder-app-8cee44a66226.zip 8cee44a6622615654996f3ae014f924fbd2a4181eac53082f476dbc6d7aeee00 6617324 profile:https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/linux-parts/HookshotLinux-usr-share-hookshot-4b9815a160ce.zip:4b9815a160cea2961fec9511d2a593860e2db767f6e55c8b31d20f3df71cf495

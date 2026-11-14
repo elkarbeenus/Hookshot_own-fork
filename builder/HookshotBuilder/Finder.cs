@@ -73,8 +73,8 @@ static class Finder
 
     // ---- shortcuts to the built game ----
 
-    public static string DesktopLink => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Hookshot.lnk");
-    public static string StartLink => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Hookshot.lnk");
+    public static string DesktopLink => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "LaküenRecomp.lnk");
+    public static string StartLink => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "LaküenRecomp.lnk");
 
     /// Made or removed as the two ticks say (Windows' own shell object writes the .lnk)
     /// The shortcuts the player has, made again (onto the folder's launcher now that it has one); none made where there was none
@@ -102,7 +102,7 @@ static class Finder
                 sl.SetPath(exe);
                 sl.SetWorkingDirectory(gameFolder);
                 sl.SetIconLocation(icon, 0);
-                sl.SetDescription("The Legend of Zelda: Ocarina of Time, built by Hookshot");
+                sl.SetDescription("The game, built by LaküenRecomp (an own tuned fork of Hookshot)");
                 Directory.CreateDirectory(Path.GetDirectoryName(link)!);
                 ((System.Runtime.InteropServices.ComTypes.IPersistFile)sl).Save(link, true);
             }

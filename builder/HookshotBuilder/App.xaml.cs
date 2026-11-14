@@ -20,7 +20,7 @@ public partial class App : Application
                 output.WriteLine("error " + why);
                 Console.Error.WriteLine("error " + why);
             }
-            else MessageBox.Show(why, "Hookshot Builder", MessageBoxButton.OK, MessageBoxImage.Error);
+            else MessageBox.Show(why, "LaküenRecomp Builder", MessageBoxButton.OK, MessageBoxImage.Error);
             // StartupUri is processed after this handler; a rejected home must never construct MainWindow.
             Environment.Exit(1);
             return;

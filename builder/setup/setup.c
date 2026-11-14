@@ -99,7 +99,7 @@ static void fail(const wchar_t *fmt, ...) {
     vswprintf(msg, 1024, fmt, ap);
     va_end(ap);
     if (g_headless) say_error(msg), ExitProcess(1);
-    MessageBoxW(g_win, msg, L"Hookshot Builder setup", MB_OK | MB_ICONERROR);
+    MessageBoxW(g_win, msg, L"LaküenRecomp Builder setup", MB_OK | MB_ICONERROR);
     PostMessageW(g_win, WM_DONE, 1, 0);
     ExitThread(1);
 }
@@ -665,16 +665,26 @@ static int builder_ready(const wchar_t *exe) {
     return 1;
 }
 
+/* (LaküenRecomp) the repository the releases and the builder-parts come from; HOOKSHOT_SETUP_LIST_DEFAULT, set when a test build's
+   setup is made (windows-builder.yml, test: true), is the list it installs when nothing else is asked: the test's list on builder-parts,
+   no release needed */
+#define LAKUEN_REPO "elkarbeenus/LakuenRecompBuilder"
+#define LAKUEN_REPO_W L"elkarbeenus/LakuenRecompBuilder"
+#ifndef HOOKSHOT_SETUP_LIST_DEFAULT
+#define HOOKSHOT_SETUP_LIST_DEFAULT ""
+#endif
+
 static const char *manifest_url(void) {
     static char u[1024];
     const char *e = getenv("HOOKSHOT_SETUP_LIST");
+    if (!(e && *e) && HOOKSHOT_SETUP_LIST_DEFAULT[0] && !wcsstr(g_cmdline, L"--tag ")) e = HOOKSHOT_SETUP_LIST_DEFAULT;
     char tag[128];
     wanted_tag(tag, sizeof tag);
     if (!tag[0] && HOOKSHOT_SETUP_RELEASE[0] && strlen(HOOKSHOT_SETUP_RELEASE) < sizeof tag) strcpy(tag, HOOKSHOT_SETUP_RELEASE);
     if (e && *e) snprintf(u, sizeof u, "%s", e);
     else if (tag[0])
-        snprintf(u, sizeof u, "https://github.com/NotRexed/Hookshot/releases/download/%s/hookshot-setup.txt", nightly_tag(tag) ? "nightly" : tag);
-    else snprintf(u, sizeof u, "%s", "https://github.com/NotRexed/Hookshot/releases/latest/download/hookshot-setup.txt");
+        snprintf(u, sizeof u, "https://github.com/" LAKUEN_REPO "/releases/download/%s/hookshot-setup.txt", nightly_tag(tag) ? "nightly" : tag);
+    else snprintf(u, sizeof u, "%s", "https://github.com/" LAKUEN_REPO "/releases/latest/download/hookshot-setup.txt");
     return u;
 }
 
@@ -695,7 +705,7 @@ static DWORD WINAPI work(LPVOID unused) {
     home_path(downloads, L"%ls\\downloads", base);
     mkdirs(downloads);
 
-    status(L"Looking for the latest Hookshot Builder...");
+    status(L"Looking for the latest LaküenRecomp Builder...");
     Mem man = {0};
     /* (tried again on a server error or no answer: GitHub's release downloads answered 504 for an hour, 2026-11-08, and every
        start failed at once) */
@@ -708,7 +718,7 @@ static DWORD WINAPI work(LPVOID unused) {
         if (attempt) {
             status(L"GitHub didn't answer (%lu). Trying again in %d s...", g_http_status, waits[attempt - 1]);
             Sleep(waits[attempt - 1] * 1000);
-            status(L"Looking for the latest Hookshot Builder...");
+            status(L"Looking for the latest LaküenRecomp Builder...");
         }
         free(man.p);
         man = (Mem){0};
@@ -726,11 +736,11 @@ static DWORD WINAPI work(LPVOID unused) {
     }
     if (!ok)
         fail(g_http_status == 404
-                 ? L"The latest Hookshot release has no setup files yet. Download HookshotBuilder.zip from the releases page for now: "
-                   L"https://github.com/NotRexed/Hookshot/releases/latest"
+                 ? L"The latest LaküenRecomp release has no setup files yet. Download HookshotBuilder.zip from the releases page for now: "
+                   L"https://github.com/" LAKUEN_REPO_W "/releases/latest"
              : g_http_status ? L"GitHub's download servers are failing right now (an error 500 or above, tried 8 times over 3 minutes). "
                                L"This is on GitHub's side: try again in a few minutes, or later today."
-                             : L"Could not reach GitHub to get the Hookshot Builder. Check your internet connection and try again.");
+                             : L"Could not reach GitHub to get the LaküenRecomp Builder. Check your internet connection and try again.");
 
     char tag[128] = "", run[260] = "";
     Part parts[MAX_PARTS];
@@ -903,7 +913,7 @@ static DWORD WINAPI work(LPVOID unused) {
     prune(versions, downloads, tag, parts, nparts);
     rmtree(downloads);   /* (installed: its zips are not kept; an update moves unchanged folders over instead, reuse_part) */
 
-    status(L"Starting the Hookshot Builder...");
+    status(L"Starting the LaküenRecomp Builder...");
     wchar_t cmd[4096], dir[MAX_PATH];
     wcscpy(dir, exe);
     wchar_t *slash = wcsrchr(dir, L'\\');
@@ -1025,7 +1035,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, LPWSTR cmdline, int show) {
                 CloseHandle(pi.hThread), CloseHandle(pi.hProcess);
                 return 0;
             }
-            MessageBoxW(NULL, L"The game (bin\\hookshot.exe) is missing from this folder. Build it again with the Hookshot Builder.", L"Hookshot",
+            MessageBoxW(NULL, L"The game (bin\\hookshot.exe) is missing from this folder. Build it again with the LaküenRecomp Builder.", L"LaküenRecomp",
                         MB_ICONERROR);
             return 1;
         }
@@ -1034,7 +1044,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, LPWSTR cmdline, int show) {
     if (!g_home_ok) {
         const wchar_t *why = L"The Builder home is unavailable or its portable marker is invalid. For a new portable install, put this setup in a writable folder and start it with --portable.";
         if (g_headless) say_error(why);
-        else MessageBoxW(NULL, why, L"Hookshot Builder setup", MB_OK | MB_ICONERROR);
+        else MessageBoxW(NULL, why, L"LaküenRecomp Builder setup", MB_OK | MB_ICONERROR);
         return 1;
     }
     INITCOMMONCONTROLSEX icc = {sizeof icc, ICC_PROGRESS_CLASS};
@@ -1046,7 +1056,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, LPWSTR cmdline, int show) {
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
     RegisterClassW(&wc);
     const int ww = 460, wh = 140;
-    g_win = CreateWindowW(L"HookshotSetup", L"Hookshot Builder setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+    g_win = CreateWindowW(L"HookshotSetup", L"LaküenRecomp Builder setup", WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                           (GetSystemMetrics(SM_CXSCREEN) - ww) / 2, (GetSystemMetrics(SM_CYSCREEN) - wh) / 2, ww, wh, NULL, NULL, inst, NULL);
     g_text = CreateWindowW(L"STATIC", L"Starting...", WS_CHILD | WS_VISIBLE, 16, 16, ww - 48, 22, g_win, NULL, inst, NULL);
     g_bar = CreateWindowW(PROGRESS_CLASSW, NULL, WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 16, 48, ww - 48, 20, g_win, NULL, inst, NULL);

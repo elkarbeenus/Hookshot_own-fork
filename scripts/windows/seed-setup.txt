@@ -1,0 +1,9 @@
+tag seed
+part 55d9f3c4797a64f5340d1972fcc64b18ac891a84fafdf670d9f65444ac801cad 44287636 . - - https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/builder-parts/HookshotBuilder-python-55d9f3c4797a.zip
+part b4c8fc476654d7657806180039b3a96050c104cf6a93dab1cc5c027277ece368 120100315 . - - https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/builder-parts/HookshotBuilder-emsdk-b4c8fc476654.zip
+part c30c77e4cf000ebf11ec82e79ace4bef3206d3698c61146f7477baa428ea7ef0 18641689 . - - https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/builder-parts/HookshotBuilder-cpm-c30c77e4cf00.zip
+part a3b3d8253fbaedf5975172994c0b45202fe2e4ff89a42ff5bfad53f9468cf498 2162194 . - - https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/builder-parts/HookshotBuilder-wgpu-native-a3b3d8253fba.zip
+part 498b31ee2254feb819032e979b37674919ec7a55ff1fd104a4a4b8ae4f620e4c 30155632 . - - https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/builder-parts/HookshotBuilder-third_party-498b31ee2254.zip
+part 8cee44a6622615654996f3ae014f924fbd2a4181eac53082f476dbc6d7aeee00 6617324 . - - https://github.com/elkarbeenus/LakuenRecompBuilder/releases/download/builder-parts/HookshotBuilder-app-8cee44a66226.zip
+part 552191b5754c49a5a20723276a6fc56541ea1922c4c50b7b669022333fc1b40f 191037046 HookshotBuilder/tools llvm-mingw-20261104-ucrt-x86_64 llvm-mingw https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/llvm-mingw-20261104-ucrt-x86_64.zip
+run HookshotBuilder/HookshotBuilder.exe
