@@ -677,7 +677,8 @@ static int builder_ready(const wchar_t *exe) {
 static const char *manifest_url(void) {
     static char u[1024];
     const char *e = getenv("HOOKSHOT_SETUP_LIST");
-    if (!(e && *e) && HOOKSHOT_SETUP_LIST_DEFAULT[0] && !wcsstr(g_cmdline, L"--tag ")) e = HOOKSHOT_SETUP_LIST_DEFAULT;
+    static const char list_default[] = HOOKSHOT_SETUP_LIST_DEFAULT;
+    if (!(e && *e) && list_default[0] && !wcsstr(g_cmdline, L"--tag ")) e = list_default;
     char tag[128];
     wanted_tag(tag, sizeof tag);
     if (!tag[0] && HOOKSHOT_SETUP_RELEASE[0] && strlen(HOOKSHOT_SETUP_RELEASE) < sizeof tag) strcpy(tag, HOOKSHOT_SETUP_RELEASE);
