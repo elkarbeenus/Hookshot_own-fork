@@ -550,6 +550,7 @@ HDR, Detail, and GPU and memory (last: the rows to change when something is wron
 | | Effect finder | On, Off: the game's passes timed on the GPU and ranked for the two rows below; each change logged for the report (after a restart; a little GPU time) | Off |
 | | Finder pass | #1-#20: the pass by its GPU cost, most first (rank, ms a frame, draws a frame); the ranking holds while it is off | #1 |
 | | Finder pass drawn | On, Off: the pass picked above drawn or left out, at once | On |
+| | Mark a visual problem | Change it once where something looks wrong (too bright, white haze, black textures): the log notes the moment and what the game did just before it, for the master log | - |
 | | GPU device | Auto, or each graphics card by name (after a restart) | Auto |
 | | VRAM budget | Auto, 3.6, 4.8, 6, 7.5, 9, 11 GB (2.2 GB only from the Minimum (4GB) preset); a quality preset sets it | Auto |
 | Audio | Volume | 0 to 100%, in steps of 5 | 100% |

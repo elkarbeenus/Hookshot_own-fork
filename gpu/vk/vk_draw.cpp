@@ -37,6 +37,7 @@
 #include "vk_draw.h"
 #include "flat_map.h"
 #include "vk_menu.h"          // (opts.anisotropy: the Anisotropic filtering row; resolution_scale)
+#include "lakuen_diag.h"      // (LaküenRecomp: the visual problems' clues for the master log)
 #include "upscaler_rows.h"    // (upscale_lod_bias: which upscalers draw the 3D smaller)
 #include "dlss_actor.h"
 #include "vk_temporal.h"
@@ -3637,6 +3638,7 @@ void build_descriptors(const NvnState& s, const Program& p) {
                     }
                 }
                 if (addr && plausible && !b) {   // (a storage buffer that could not be bound: the program reads zeros from it)
+                    diag_unbound(p.key, ns, addr, size, d.is_written);   // (LaküenRecomp: counted for the master log)
                     static std::atomic<int> unbound{0};
                     if (unbound++ < 40)
                         logf("vk: storage buffer NOT bound (reads zeros): program %016llx stage %d c%u+%#x addr %#llx size "
@@ -6883,7 +6885,7 @@ void draw(VkCommandBuffer cmd, NvnState& s, const DrawArgs& d) {
     if (cp->key == 0x1a7482c0ec9991eaULL) world_drawn_at.store(presents_now, std::memory_order_relaxed);
     if (cp->key == 0x02ff9920c2571cc2ULL) wheel_drawn_at.store(presents_now, std::memory_order_relaxed);
     if (skip_live(cp->key)) return;   // (EvilOOT, RX_VK_SKIP_FILE)
-    if (menu_effect_off(cp->key)) return;   // (LaküenRecomp: an Effect pass row at Off)
+    if (menu_effect_off(cp->key)) { diag_left_out(cp->key); return; }   // (LaküenRecomp: an Effect pass row at Off)
     {   // (hookshot, RX_VK_SKIP_PROG=<key prefix,...>: draws too, their native code keys logged once; =-: none)
         // (OoT's 53509044401d78d2, by default only while its targets have no view: 128 draws, once while an area loads, that render
         // the slices of two 64^3 BC4 noise volumes through raw RGBA16UI views. Those views were not made (no attachment usage) and

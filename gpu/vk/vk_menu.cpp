@@ -31,6 +31,7 @@
 
 #include "vk_paths.h"
 #include "vk_gprof.h"   // (LaküenRecomp: the Effect finder's ranking)
+#include "lakuen_diag.h"   // (LaküenRecomp: the Mark a visual problem row)
 #include "vk_menu.h"
 #include "vk_menu_hit.h"
 #include "vk_fps.h"    // (the FPS counter's levels and numbers)
@@ -132,6 +133,13 @@ const char* tx_finder_pick(int v) {   // (LaküenRecomp: the Effect finder's pas
     if (!finder_on()) snprintf(b, sizeof b, "#%d (finder off)", v);
     else if (!finder_entry(v - 1, &key, &ms, &draws)) snprintf(b, sizeof b, "#%d (timing comes in ~10 s)", v);
     else snprintf(b, sizeof b, "#%d  %.2f ms, %.0f draws  %08llx", v, ms, draws, (unsigned long long)(key >> 32));
+    return b;
+}
+int marks_made = 0;   // (LaküenRecomp: the Mark a visual problem row's marks this run)
+const char* tx_mark(int) {
+    static char b[64];
+    if (!marks_made) snprintf(b, sizeof b, "Press left/right to mark");
+    else snprintf(b, sizeof b, "Marked %d time%s", marks_made, marks_made == 1 ? "" : "s");
     return b;
 }
 const char* tx_fps_level(int v) { return fps_stats::level_name(v); }
@@ -1300,6 +1308,10 @@ Row rows[] = {
      false, true},
     {TAB_GRAPHICS, "Finder pass drawn", &opts.finder_draw, 0, 1, 1, tx_onoff,
      "Off leaves the pass picked above out at once.", nullptr, false, true},
+    {TAB_GRAPHICS, "Mark a visual problem", &opts.mark, 0, 1, 1, tx_mark,
+     "Where something looks wrong (too bright, white haze, black or missing textures): change this once. The log notes the "
+     "moment and what the game did just before it, for the master log and the report. With the Effect finder on, also the "
+     "passes the GPU drew most.", nullptr, false, true},
     // (the rows to change when something is wrong, or on a card short of memory: last)
     {TAB_GRAPHICS, "GPU and memory", nullptr, 0, 0, 0, nullptr, nullptr, nullptr, false, true, -1, true},
     {TAB_GRAPHICS, "GPU device", &opts.gpu_device, 0, 8, 1, tx_gpu,
@@ -1970,7 +1982,7 @@ void save() {
                 // ultrawide= is kept, unless the row was changed in the menu)
                 const int v = saved_value(r.value);
                 fprintf(f, "%s=%d\n", ini_key(r), env_holds(&opts.output_res) && v == aspect_started ? ultrawide_read : aspect_follows_host(v) ? 1 : 0);
-            } else if (r.value && r.value != &opts.game_lang) {   // (game_lang: language.txt's)
+            } else if (r.value && r.value != &opts.game_lang && r.value != &opts.mark) {   // (game_lang: language.txt's; mark: a moment's)
                 fprintf(f, "%s=%d\n", ini_key(r), saved_value(r.value));
             }
         }
@@ -4929,8 +4941,17 @@ static void playtime_tick() {
     }
 }
 
-void menu_tick() {
+// (LaküenRecomp) Each present: the time played, the visual problems' clues (lakuen_diag.h) and the Mark a visual problem row's
+// marks (each change one)
+static void lakuen_tick() {
     playtime_tick();
+    diag_tick();
+    static int seen = opts.mark;
+    if (opts.mark != seen) seen = opts.mark, diag_mark(++marks_made);
+}
+
+void menu_tick() {
+    lakuen_tick();
     std::lock_guard lk(menu_mu);   // (the control bridge's settings: menu_setting_set)
     share_finish();   // (Save my pipeline list's worker, done)
     fullscreen_tick();

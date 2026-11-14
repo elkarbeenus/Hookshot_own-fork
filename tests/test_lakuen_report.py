@@ -79,6 +79,22 @@ class Report(unittest.TestCase):
             self.assertEqual(os.path.getmtime(path), first)
             self.assertIsNone(lr.update_master(os.path.join(game, "none")) if os.path.isdir(os.path.join(game, "none")) else None)
 
+    def test_visual_problem_marks_and_clues(self):
+        log = LOG + """[hos Presentation Thread] lakuen-diag: on (LAKUEN_DIAG=0 turns it off): programs reading zeros, write-back timeouts and marks go into the master log
+[hos Presentation Thread] lakuen-diag: 21:05:00 frame 9000: 1 programs read zeros (40 times in the last 30 s); write-back timeouts: 0 capture (last frame 0), 3 readback (last frame 8990)
+[hos Presentation Thread] lakuen-diag:   reads zeros: program da7a7ab28b8e73d9 stage 4 addr 0x1234000 size 0x100: 40 times (frames 8000-8999)
+[hos Presentation Thread] lakuen-mark: #1 at 21:05:10, frame 9300
+[hos Presentation Thread] lakuen-mark: #1   write-back timeouts: 0 capture (last none), 3 readback (last JUST NOW)
+"""
+        s = lr.summarize(log)
+        self.assertIn("visual problems: 1 marks by the player", s)
+        self.assertIn("#1 at 21:05:10, frame 9300", s)
+        self.assertIn("3 readback (last JUST NOW)", s)
+        self.assertIn("run summaries: 1", s)
+        self.assertIn("program da7a7ab28b8e73d9 stage 4", s)
+        quiet = lr.summarize(LOG + "[hos host] lakuen-diag: on (LAKUEN_DIAG=0 turns it off): ...\n")
+        self.assertIn("visual problems: no marks", quiet)
+
     def test_no_log_is_a_clear_error(self):
         with tempfile.TemporaryDirectory() as game:
             with self.assertRaises(ValueError):

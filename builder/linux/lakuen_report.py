@@ -186,6 +186,24 @@ def summarize(log_text, folder=None, device=None, version=None):
             if "ranking:" not in l:
                 w("  " + l.replace("vk: ", ""))
 
+    # the visual problems' clues (gpu/vk/lakuen_diag.cpp): the player's marks first, then the last 30 s summaries
+    marks = [l.split("] ", 1)[-1] for l in lines if "lakuen-mark:" in l]
+    diag = [l.split("] ", 1)[-1] for l in lines if "lakuen-diag:" in l and " on (LAKUEN_DIAG" not in l]
+    if marks or diag:
+        w("")
+        w("--- visual problems: %d marks by the player" % sum(1 for l in marks if re.search(r"lakuen-mark: #\d+ at ", l)))
+        for l in marks[:120]:
+            w("  " + _short(l.replace("lakuen-mark: ", ""), 200))
+        if diag:
+            heads = [i for i, l in enumerate(diag) if " frame " in l and "programs read zeros" in l]
+            w("  run summaries: %d (the last one and the programs it named:)" % len(heads))
+            if heads:
+                for l in diag[heads[-1]:heads[-1] + 7]:
+                    w("    " + _short(l.replace("lakuen-diag: ", ""), 200))
+    elif any("lakuen-diag: on" in l for l in lines):
+        w("")
+        w("--- visual problems: no marks, no programs reading zeros, no write-back timeouts")
+
     # warnings, each kind once with its count
     counts, first = {}, {}
     for l in lines:

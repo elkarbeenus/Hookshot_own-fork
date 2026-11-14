@@ -48,6 +48,7 @@ static char logged[512];
 static void queue_flush_for(int why) { if (why == FR_VALUE) flushes++; }
 static uint64_t completed() { return signalled; }
 static void wait_value(uint64_t) { unlimited_waits++; }
+static void diag_wb_timeout(bool) {}   // (LaküenRecomp: lakuen_diag.h, counted for the master log)
 static void logf(const char* f, ...) { va_list a; va_start(a, f); std::vsnprintf(logged, sizeof logged, f, a); va_end(a); }
 static VkResult vkWaitSemaphores(VkDevice, const VkSemaphoreWaitInfo* wi, uint64_t timeout) {
     waits++, last_timeout = timeout;

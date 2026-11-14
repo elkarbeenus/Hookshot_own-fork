@@ -43,6 +43,7 @@ struct Options {
                           // the start (vk_texture.cpp create, shadow_resolution_factor)
     int effect_1 = 1, effect_4 = 1;   // (LaküenRecomp) Effect pass 1 and Ground fog: 1 drawn, 0 left out
                           // (menu_effect_off, vk_draw.cpp: costly passes a Steam Deck's GPU timing found; live)
+    int mark = 0;         // (LaküenRecomp) Mark a visual problem: each change is a mark in the log (lakuen_diag.h); not saved
     int finder = 0, finder_pick = 1, finder_draw = 1;   // (LaküenRecomp) the Effect finder: on (read at the start), the pass by
                           // rank, drawn (1) or left out (0), live (vk_gprof.h finder_entry, menu_effect_off)
     int realtime = 1;     // game time follows the clock (host/nn_vi.c); 0: per frame (slower frames, slower game)

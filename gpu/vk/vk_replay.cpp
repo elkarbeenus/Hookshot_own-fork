@@ -32,6 +32,7 @@
 #include "vk_temporal.h"
 #include "vk_fsr3_inputs.h"   // (the camera jitter while AMD FSR 3.1 upscales)
 #include "vk_fsr3.h"          // (retire old FSR 3.1 images after leaving its upscaler)
+#include "lakuen_diag.h"      // (LaküenRecomp: write-back timeouts for the master log)
 #include "status_line.h"
 #include "vk_reflex.h"
 #include "vk_antilag.h"
@@ -328,6 +329,7 @@ void vk_timeline_wait(uint64_t v) {   // (at most 250 ms: a submission held back
     int ok = 0;
     if (wait_recorded(v, 250000000ull, &ok)) {
         if (!ok) {
+            diag_wb_timeout(false);   // (LaküenRecomp: counted for the master log)
             static std::atomic<int> logged{0};
             if (logged++ < 8)
                 logf("vk: a capture's wait for write-back %llu timed out (done %llu)", (unsigned long long)v,
@@ -341,6 +343,7 @@ void vk_timeline_wait(uint64_t v) {   // (at most 250 ms: a submission held back
     wi.pSemaphores = &timeline;
     wi.pValues = &v;
     if (vkWaitSemaphores(dev.device, &wi, 250000000ull) == VK_TIMEOUT) {
+        diag_wb_timeout(false);
         static std::atomic<int> logged{0};
         if (logged++ < 8) logf("vk: a capture's wait for write-back %llu timed out (done %llu)", (unsigned long long)v, (unsigned long long)completed());
     }
@@ -2541,6 +2544,7 @@ bool readback_wait_value(uint64_t v) {
     wi.pSemaphores = &timeline;
     wi.pValues = &v;
     if (vkWaitSemaphores(dev.device, &wi, (uint64_t)limit_ms * 1000000ull) != VK_TIMEOUT) return true;
+    diag_wb_timeout(true);   // (LaküenRecomp: counted for the master log)
     static std::atomic<int> logged{0};
     if (logged++ < 8)
         logf("vk: a readback's wait for write-back %llu timed out after %lld ms (done %llu, submitted %llu, handed out %llu)",
